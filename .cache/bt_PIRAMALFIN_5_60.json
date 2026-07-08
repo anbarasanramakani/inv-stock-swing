@@ -1,0 +1,2707 @@
+{
+  "df_len": 166,
+  "last_date": "2026-07-08",
+  "summary_records": [
+    {
+      "Strategy": "RSI Pullback (Uptrend) OR Bollinger Rebound",
+      "Type": "OR",
+      "Total Trades": 3,
+      "Target Hits": 3,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 100.0,
+      "Avg P&L (%)": 4.66
+    },
+    {
+      "Strategy": "EMA Pullback (20) AND MACD Crossover",
+      "Type": "AND",
+      "Total Trades": 2,
+      "Target Hits": 2,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 100.0,
+      "Avg P&L (%)": 4.82
+    },
+    {
+      "Strategy": "Bollinger Rebound",
+      "Type": "INDIVIDUAL",
+      "Total Trades": 2,
+      "Target Hits": 2,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 100.0,
+      "Avg P&L (%)": 4.77
+    },
+    {
+      "Strategy": "RSI Reversal (Oversold) OR Bollinger Rebound",
+      "Type": "OR",
+      "Total Trades": 2,
+      "Target Hits": 2,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 100.0,
+      "Avg P&L (%)": 4.77
+    },
+    {
+      "Strategy": "EMA Pullback (20) AND Bollinger Rebound",
+      "Type": "AND",
+      "Total Trades": 1,
+      "Target Hits": 1,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 100.0,
+      "Avg P&L (%)": 5.43
+    },
+    {
+      "Strategy": "MACD Crossover AND Bollinger Rebound",
+      "Type": "AND",
+      "Total Trades": 1,
+      "Target Hits": 1,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 100.0,
+      "Avg P&L (%)": 4.83
+    },
+    {
+      "Strategy": "RSI Pullback (Uptrend)",
+      "Type": "INDIVIDUAL",
+      "Total Trades": 1,
+      "Target Hits": 1,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 100.0,
+      "Avg P&L (%)": 4.44
+    },
+    {
+      "Strategy": "EMA Pullback (20) AND RSI Pullback (Uptrend)",
+      "Type": "AND",
+      "Total Trades": 1,
+      "Target Hits": 1,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 100.0,
+      "Avg P&L (%)": 4.44
+    },
+    {
+      "Strategy": "RSI Reversal (Oversold) OR RSI Pullback (Uptrend)",
+      "Type": "OR",
+      "Total Trades": 1,
+      "Target Hits": 1,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 100.0,
+      "Avg P&L (%)": 4.44
+    },
+    {
+      "Strategy": "MACD Crossover AND High-Conviction 95% Pullback",
+      "Type": "AND",
+      "Total Trades": 1,
+      "Target Hits": 1,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 100.0,
+      "Avg P&L (%)": 3.43
+    },
+    {
+      "Strategy": "Bollinger Rebound OR High-Conviction 95% Pullback",
+      "Type": "OR",
+      "Total Trades": 5,
+      "Target Hits": 4,
+      "Stop Loss Hits": 0,
+      "Time Exits": 1,
+      "Target Hit Rate (%)": 80.0,
+      "Avg P&L (%)": 2.93
+    },
+    {
+      "Strategy": "RSI Pullback (Uptrend) OR High-Conviction 95% Pullback",
+      "Type": "OR",
+      "Total Trades": 4,
+      "Target Hits": 3,
+      "Stop Loss Hits": 0,
+      "Time Exits": 1,
+      "Target Hit Rate (%)": 75.0,
+      "Avg P&L (%)": 2.39
+    },
+    {
+      "Strategy": "Consensus (At least 3)",
+      "Type": "CONSENSUS",
+      "Total Trades": 3,
+      "Target Hits": 2,
+      "Stop Loss Hits": 0,
+      "Time Exits": 1,
+      "Target Hit Rate (%)": 66.67,
+      "Avg P&L (%)": 2.68
+    },
+    {
+      "Strategy": "High-Conviction 95% Pullback",
+      "Type": "INDIVIDUAL",
+      "Total Trades": 3,
+      "Target Hits": 2,
+      "Stop Loss Hits": 0,
+      "Time Exits": 1,
+      "Target Hit Rate (%)": 66.67,
+      "Avg P&L (%)": 1.71
+    },
+    {
+      "Strategy": "RSI Reversal (Oversold) OR High-Conviction 95% Pullback",
+      "Type": "OR",
+      "Total Trades": 3,
+      "Target Hits": 2,
+      "Stop Loss Hits": 0,
+      "Time Exits": 1,
+      "Target Hit Rate (%)": 66.67,
+      "Avg P&L (%)": 1.71
+    },
+    {
+      "Strategy": "Consensus (At least 2)",
+      "Type": "CONSENSUS",
+      "Total Trades": 5,
+      "Target Hits": 3,
+      "Stop Loss Hits": 0,
+      "Time Exits": 2,
+      "Target Hit Rate (%)": 60.0,
+      "Avg P&L (%)": 3.01
+    },
+    {
+      "Strategy": "MACD Crossover OR Bollinger Rebound",
+      "Type": "OR",
+      "Total Trades": 5,
+      "Target Hits": 3,
+      "Stop Loss Hits": 2,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 60.0,
+      "Avg P&L (%)": 1.47
+    },
+    {
+      "Strategy": "RSI Pullback (Uptrend) OR MACD Crossover",
+      "Type": "OR",
+      "Total Trades": 5,
+      "Target Hits": 3,
+      "Stop Loss Hits": 2,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 60.0,
+      "Avg P&L (%)": 1.41
+    },
+    {
+      "Strategy": "MACD Crossover OR High-Conviction 95% Pullback",
+      "Type": "OR",
+      "Total Trades": 6,
+      "Target Hits": 3,
+      "Stop Loss Hits": 2,
+      "Time Exits": 1,
+      "Target Hit Rate (%)": 50.0,
+      "Avg P&L (%)": 0.72
+    },
+    {
+      "Strategy": "MACD Crossover",
+      "Type": "INDIVIDUAL",
+      "Total Trades": 4,
+      "Target Hits": 2,
+      "Stop Loss Hits": 2,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 50.0,
+      "Avg P&L (%)": 0.66
+    },
+    {
+      "Strategy": "RSI Reversal (Oversold) OR MACD Crossover",
+      "Type": "OR",
+      "Total Trades": 4,
+      "Target Hits": 2,
+      "Stop Loss Hits": 2,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 50.0,
+      "Avg P&L (%)": 0.66
+    },
+    {
+      "Strategy": "Volume Breakout OR Bollinger Rebound",
+      "Type": "OR",
+      "Total Trades": 4,
+      "Target Hits": 2,
+      "Stop Loss Hits": 2,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 50.0,
+      "Avg P&L (%)": 0.54
+    },
+    {
+      "Strategy": "Volume Breakout OR High-Conviction 95% Pullback",
+      "Type": "OR",
+      "Total Trades": 4,
+      "Target Hits": 2,
+      "Stop Loss Hits": 1,
+      "Time Exits": 1,
+      "Target Hit Rate (%)": 50.0,
+      "Avg P&L (%)": 0.24
+    },
+    {
+      "Strategy": "EMA Pullback (20) OR Bollinger Rebound",
+      "Type": "OR",
+      "Total Trades": 15,
+      "Target Hits": 5,
+      "Stop Loss Hits": 3,
+      "Time Exits": 7,
+      "Target Hit Rate (%)": 33.33,
+      "Avg P&L (%)": 0.86
+    },
+    {
+      "Strategy": "Volume Breakout OR MACD Crossover",
+      "Type": "OR",
+      "Total Trades": 6,
+      "Target Hits": 2,
+      "Stop Loss Hits": 4,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 33.33,
+      "Avg P&L (%)": -0.79
+    },
+    {
+      "Strategy": "EMA Pullback (20) AND High-Conviction 95% Pullback",
+      "Type": "AND",
+      "Total Trades": 3,
+      "Target Hits": 1,
+      "Stop Loss Hits": 0,
+      "Time Exits": 2,
+      "Target Hit Rate (%)": 33.33,
+      "Avg P&L (%)": 1.82
+    },
+    {
+      "Strategy": "RSI Pullback (Uptrend) OR Volume Breakout",
+      "Type": "OR",
+      "Total Trades": 3,
+      "Target Hits": 1,
+      "Stop Loss Hits": 2,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 33.33,
+      "Avg P&L (%)": -0.97
+    },
+    {
+      "Strategy": "EMA Pullback (20) OR High-Conviction 95% Pullback",
+      "Type": "OR",
+      "Total Trades": 14,
+      "Target Hits": 4,
+      "Stop Loss Hits": 1,
+      "Time Exits": 9,
+      "Target Hit Rate (%)": 28.57,
+      "Avg P&L (%)": 1.13
+    },
+    {
+      "Strategy": "EMA Pullback (20)",
+      "Type": "INDIVIDUAL",
+      "Total Trades": 14,
+      "Target Hits": 4,
+      "Stop Loss Hits": 3,
+      "Time Exits": 7,
+      "Target Hit Rate (%)": 28.57,
+      "Avg P&L (%)": 0.63
+    },
+    {
+      "Strategy": "EMA Pullback (20) OR RSI Reversal (Oversold)",
+      "Type": "OR",
+      "Total Trades": 14,
+      "Target Hits": 4,
+      "Stop Loss Hits": 3,
+      "Time Exits": 7,
+      "Target Hit Rate (%)": 28.57,
+      "Avg P&L (%)": 0.63
+    },
+    {
+      "Strategy": "EMA Pullback (20) OR RSI Pullback (Uptrend)",
+      "Type": "OR",
+      "Total Trades": 14,
+      "Target Hits": 4,
+      "Stop Loss Hits": 3,
+      "Time Exits": 7,
+      "Target Hit Rate (%)": 28.57,
+      "Avg P&L (%)": 0.63
+    },
+    {
+      "Strategy": "EMA Pullback (20) OR Volume Breakout",
+      "Type": "OR",
+      "Total Trades": 15,
+      "Target Hits": 4,
+      "Stop Loss Hits": 4,
+      "Time Exits": 7,
+      "Target Hit Rate (%)": 26.67,
+      "Avg P&L (%)": 0.31
+    },
+    {
+      "Strategy": "EMA Pullback (20) OR MACD Crossover",
+      "Type": "OR",
+      "Total Trades": 16,
+      "Target Hits": 4,
+      "Stop Loss Hits": 5,
+      "Time Exits": 7,
+      "Target Hit Rate (%)": 25.0,
+      "Avg P&L (%)": 0.11
+    },
+    {
+      "Strategy": "Volume Breakout",
+      "Type": "INDIVIDUAL",
+      "Total Trades": 2,
+      "Target Hits": 0,
+      "Stop Loss Hits": 2,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": -3.68
+    },
+    {
+      "Strategy": "RSI Reversal (Oversold) OR Volume Breakout",
+      "Type": "OR",
+      "Total Trades": 2,
+      "Target Hits": 0,
+      "Stop Loss Hits": 2,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": -3.68
+    },
+    {
+      "Strategy": "Volume Breakout AND High-Conviction 95% Pullback",
+      "Type": "AND",
+      "Total Trades": 1,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 1,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": -1.03
+    },
+    {
+      "Strategy": "EMA Pullback (20) AND Volume Breakout",
+      "Type": "AND",
+      "Total Trades": 1,
+      "Target Hits": 0,
+      "Stop Loss Hits": 1,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": -3.2
+    },
+    {
+      "Strategy": "RSI Reversal (Oversold)",
+      "Type": "INDIVIDUAL",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    },
+    {
+      "Strategy": "EMA Pullback (20) AND RSI Reversal (Oversold)",
+      "Type": "AND",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    },
+    {
+      "Strategy": "RSI Reversal (Oversold) AND RSI Pullback (Uptrend)",
+      "Type": "AND",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    },
+    {
+      "Strategy": "RSI Reversal (Oversold) AND Volume Breakout",
+      "Type": "AND",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    },
+    {
+      "Strategy": "RSI Reversal (Oversold) AND MACD Crossover",
+      "Type": "AND",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    },
+    {
+      "Strategy": "RSI Reversal (Oversold) AND Bollinger Rebound",
+      "Type": "AND",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    },
+    {
+      "Strategy": "RSI Reversal (Oversold) AND High-Conviction 95% Pullback",
+      "Type": "AND",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    },
+    {
+      "Strategy": "RSI Pullback (Uptrend) AND Volume Breakout",
+      "Type": "AND",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    },
+    {
+      "Strategy": "RSI Pullback (Uptrend) AND MACD Crossover",
+      "Type": "AND",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    },
+    {
+      "Strategy": "RSI Pullback (Uptrend) AND Bollinger Rebound",
+      "Type": "AND",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    },
+    {
+      "Strategy": "RSI Pullback (Uptrend) AND High-Conviction 95% Pullback",
+      "Type": "AND",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    },
+    {
+      "Strategy": "Volume Breakout AND MACD Crossover",
+      "Type": "AND",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    },
+    {
+      "Strategy": "Volume Breakout AND Bollinger Rebound",
+      "Type": "AND",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    },
+    {
+      "Strategy": "Bollinger Rebound AND High-Conviction 95% Pullback",
+      "Type": "AND",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    },
+    {
+      "Strategy": "Consensus (At least 4)",
+      "Type": "CONSENSUS",
+      "Total Trades": 0,
+      "Target Hits": 0,
+      "Stop Loss Hits": 0,
+      "Time Exits": 0,
+      "Target Hit Rate (%)": 0.0,
+      "Avg P&L (%)": 0.0
+    }
+  ],
+  "trade_logs": {
+    "EMA Pullback (20)": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1938.45,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1938.45,
+        "P&L (%)": 6.03,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-05-05",
+        "Exit Date": "2026-05-12",
+        "Entry Price": 1900.82,
+        "Target": 2021.03,
+        "Stop Loss": 1820.67,
+        "Exit Price": 1898.93,
+        "P&L (%)": -0.1,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-13",
+        "Exit Date": "2026-05-20",
+        "Entry Price": 1908.28,
+        "Target": 2024.51,
+        "Stop Loss": 1830.79,
+        "Exit Price": 1914.64,
+        "P&L (%)": 0.33,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-18",
+        "Exit Date": "2026-05-25",
+        "Entry Price": 1894.06,
+        "Target": 2003.92,
+        "Stop Loss": 1820.81,
+        "Exit Price": 1931.94,
+        "P&L (%)": 2.0,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-19",
+        "Exit Date": "2026-05-26",
+        "Entry Price": 1925.28,
+        "Target": 2033.82,
+        "Stop Loss": 1852.92,
+        "Exit Price": 1938.21,
+        "P&L (%)": 0.67,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-22",
+        "Exit Date": "2026-05-29",
+        "Entry Price": 1948.45,
+        "Target": 2048.71,
+        "Stop Loss": 1881.61,
+        "Exit Price": 1915.93,
+        "P&L (%)": -1.67,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-26",
+        "Exit Date": "2026-06-02",
+        "Entry Price": 1938.21,
+        "Target": 2033.68,
+        "Stop Loss": 1874.55,
+        "Exit Price": 1897.54,
+        "P&L (%)": -2.1,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-01",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1923.69,
+        "Target": 2011.65,
+        "Stop Loss": 1865.05,
+        "Exit Price": 2011.65,
+        "P&L (%)": 4.57,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-04",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1954.31,
+        "Target": 2039.93,
+        "Stop Loss": 1897.24,
+        "Exit Price": 1939.2,
+        "P&L (%)": -0.77,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1966.25,
+        "Target": 2055.84,
+        "Stop Loss": 1906.51,
+        "Exit Price": 1906.51,
+        "P&L (%)": -3.04,
+        "Status": "Stop Loss Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-09",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1982.45,
+        "Target": 2072.55,
+        "Stop Loss": 1922.39,
+        "Exit Price": 1922.39,
+        "P&L (%)": -3.03,
+        "Status": "Stop Loss Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2111.5,
+        "Stop Loss": 1954.33,
+        "Exit Price": 2111.5,
+        "P&L (%)": 4.67,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-22",
+        "Entry Price": 2153.1,
+        "Target": 2256.5,
+        "Stop Loss": 2084.17,
+        "Exit Price": 2084.17,
+        "P&L (%)": -3.2,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      }
+    ],
+    "RSI Reversal (Oversold)": [],
+    "RSI Pullback (Uptrend)": [
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      }
+    ],
+    "Volume Breakout": [
+      {
+        "Trigger Date": "2026-04-28",
+        "Exit Date": "2026-05-04",
+        "Entry Price": 1997.47,
+        "Target": 2122.07,
+        "Stop Loss": 1914.4,
+        "Exit Price": 1914.4,
+        "P&L (%)": -4.16,
+        "Status": "Stop Loss Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-22",
+        "Entry Price": 2153.1,
+        "Target": 2256.5,
+        "Stop Loss": 2084.17,
+        "Exit Price": 2084.17,
+        "P&L (%)": -3.2,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      }
+    ],
+    "MACD Crossover": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1916.39,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1916.39,
+        "P&L (%)": 4.83,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-05-28",
+        "Exit Date": "2026-05-29",
+        "Entry Price": 1974.7,
+        "Target": 2044.59,
+        "Stop Loss": 1916.45,
+        "Exit Price": 1916.45,
+        "P&L (%)": -2.95,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-10",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1972.31,
+        "Target": 2043.28,
+        "Stop Loss": 1913.17,
+        "Exit Price": 1913.17,
+        "P&L (%)": -3.0,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2092.64,
+        "Stop Loss": 1954.33,
+        "Exit Price": 2092.64,
+        "P&L (%)": 3.74,
+        "Status": "Target Hit",
+        "Days Held": 5
+      }
+    ],
+    "Bollinger Rebound": [
+      {
+        "Trigger Date": "2026-04-21",
+        "Exit Date": "2026-04-22",
+        "Entry Price": 1686.04,
+        "Target": 1765.39,
+        "Stop Loss": 1619.91,
+        "Exit Price": 1765.39,
+        "P&L (%)": 4.71,
+        "Status": "Target Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1916.39,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1916.39,
+        "P&L (%)": 4.83,
+        "Status": "Target Hit",
+        "Days Held": 4
+      }
+    ],
+    "High-Conviction 95% Pullback": [
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-12",
+        "Entry Price": 1966.25,
+        "Target": 2025.98,
+        "Stop Loss": 1834.84,
+        "Exit Price": 2025.98,
+        "P&L (%)": 3.04,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-15",
+        "Entry Price": 2017.2,
+        "Target": 2080.07,
+        "Stop Loss": 1878.89,
+        "Exit Price": 2080.07,
+        "P&L (%)": 3.12,
+        "Status": "Target Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-26",
+        "Entry Price": 2153.1,
+        "Target": 2222.03,
+        "Stop Loss": 2001.45,
+        "Exit Price": 2131.0,
+        "P&L (%)": -1.03,
+        "Status": "Time Exit",
+        "Days Held": 5
+      }
+    ],
+    "EMA Pullback (20) AND RSI Reversal (Oversold)": [],
+    "EMA Pullback (20) AND RSI Pullback (Uptrend)": [
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      }
+    ],
+    "EMA Pullback (20) AND Volume Breakout": [
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-22",
+        "Entry Price": 2153.1,
+        "Target": 2256.5,
+        "Stop Loss": 2084.17,
+        "Exit Price": 2084.17,
+        "P&L (%)": -3.2,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      }
+    ],
+    "EMA Pullback (20) AND MACD Crossover": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1927.42,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1927.42,
+        "P&L (%)": 5.43,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2102.07,
+        "Stop Loss": 1954.33,
+        "Exit Price": 2102.07,
+        "P&L (%)": 4.21,
+        "Status": "Target Hit",
+        "Days Held": 5
+      }
+    ],
+    "EMA Pullback (20) AND Bollinger Rebound": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1927.42,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1927.42,
+        "P&L (%)": 5.43,
+        "Status": "Target Hit",
+        "Days Held": 4
+      }
+    ],
+    "EMA Pullback (20) AND High-Conviction 95% Pullback": [
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-12",
+        "Entry Price": 1966.25,
+        "Target": 2040.91,
+        "Stop Loss": 1870.68,
+        "Exit Price": 2017.2,
+        "P&L (%)": 2.59,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2095.79,
+        "Stop Loss": 1916.61,
+        "Exit Price": 2095.79,
+        "P&L (%)": 3.9,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-26",
+        "Entry Price": 2153.1,
+        "Target": 2239.26,
+        "Stop Loss": 2042.81,
+        "Exit Price": 2131.0,
+        "P&L (%)": -1.03,
+        "Status": "Time Exit",
+        "Days Held": 5
+      }
+    ],
+    "RSI Reversal (Oversold) AND RSI Pullback (Uptrend)": [],
+    "RSI Reversal (Oversold) AND Volume Breakout": [],
+    "RSI Reversal (Oversold) AND MACD Crossover": [],
+    "RSI Reversal (Oversold) AND Bollinger Rebound": [],
+    "RSI Reversal (Oversold) AND High-Conviction 95% Pullback": [],
+    "RSI Pullback (Uptrend) AND Volume Breakout": [],
+    "RSI Pullback (Uptrend) AND MACD Crossover": [],
+    "RSI Pullback (Uptrend) AND Bollinger Rebound": [],
+    "RSI Pullback (Uptrend) AND High-Conviction 95% Pullback": [],
+    "Volume Breakout AND MACD Crossover": [],
+    "Volume Breakout AND Bollinger Rebound": [],
+    "Volume Breakout AND High-Conviction 95% Pullback": [
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-26",
+        "Entry Price": 2153.1,
+        "Target": 2239.26,
+        "Stop Loss": 2042.81,
+        "Exit Price": 2131.0,
+        "P&L (%)": -1.03,
+        "Status": "Time Exit",
+        "Days Held": 5
+      }
+    ],
+    "MACD Crossover AND Bollinger Rebound": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1916.39,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1916.39,
+        "P&L (%)": 4.83,
+        "Status": "Target Hit",
+        "Days Held": 4
+      }
+    ],
+    "MACD Crossover AND High-Conviction 95% Pullback": [
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-15",
+        "Entry Price": 2017.2,
+        "Target": 2086.36,
+        "Stop Loss": 1916.61,
+        "Exit Price": 2086.36,
+        "P&L (%)": 3.43,
+        "Status": "Target Hit",
+        "Days Held": 1
+      }
+    ],
+    "Bollinger Rebound AND High-Conviction 95% Pullback": [],
+    "EMA Pullback (20) OR RSI Reversal (Oversold)": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1938.45,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1938.45,
+        "P&L (%)": 6.03,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-05-05",
+        "Exit Date": "2026-05-12",
+        "Entry Price": 1900.82,
+        "Target": 2021.03,
+        "Stop Loss": 1820.67,
+        "Exit Price": 1898.93,
+        "P&L (%)": -0.1,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-13",
+        "Exit Date": "2026-05-20",
+        "Entry Price": 1908.28,
+        "Target": 2024.51,
+        "Stop Loss": 1830.79,
+        "Exit Price": 1914.64,
+        "P&L (%)": 0.33,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-18",
+        "Exit Date": "2026-05-25",
+        "Entry Price": 1894.06,
+        "Target": 2003.92,
+        "Stop Loss": 1820.81,
+        "Exit Price": 1931.94,
+        "P&L (%)": 2.0,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-19",
+        "Exit Date": "2026-05-26",
+        "Entry Price": 1925.28,
+        "Target": 2033.82,
+        "Stop Loss": 1852.92,
+        "Exit Price": 1938.21,
+        "P&L (%)": 0.67,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-22",
+        "Exit Date": "2026-05-29",
+        "Entry Price": 1948.45,
+        "Target": 2048.71,
+        "Stop Loss": 1881.61,
+        "Exit Price": 1915.93,
+        "P&L (%)": -1.67,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-26",
+        "Exit Date": "2026-06-02",
+        "Entry Price": 1938.21,
+        "Target": 2033.68,
+        "Stop Loss": 1874.55,
+        "Exit Price": 1897.54,
+        "P&L (%)": -2.1,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-01",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1923.69,
+        "Target": 2011.65,
+        "Stop Loss": 1865.05,
+        "Exit Price": 2011.65,
+        "P&L (%)": 4.57,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-04",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1954.31,
+        "Target": 2039.93,
+        "Stop Loss": 1897.24,
+        "Exit Price": 1939.2,
+        "P&L (%)": -0.77,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1966.25,
+        "Target": 2055.84,
+        "Stop Loss": 1906.51,
+        "Exit Price": 1906.51,
+        "P&L (%)": -3.04,
+        "Status": "Stop Loss Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-09",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1982.45,
+        "Target": 2072.55,
+        "Stop Loss": 1922.39,
+        "Exit Price": 1922.39,
+        "P&L (%)": -3.03,
+        "Status": "Stop Loss Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2111.5,
+        "Stop Loss": 1954.33,
+        "Exit Price": 2111.5,
+        "P&L (%)": 4.67,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-22",
+        "Entry Price": 2153.1,
+        "Target": 2256.5,
+        "Stop Loss": 2084.17,
+        "Exit Price": 2084.17,
+        "P&L (%)": -3.2,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      }
+    ],
+    "EMA Pullback (20) OR RSI Pullback (Uptrend)": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1938.45,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1938.45,
+        "P&L (%)": 6.03,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-05-05",
+        "Exit Date": "2026-05-12",
+        "Entry Price": 1900.82,
+        "Target": 2021.03,
+        "Stop Loss": 1820.67,
+        "Exit Price": 1898.93,
+        "P&L (%)": -0.1,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-13",
+        "Exit Date": "2026-05-20",
+        "Entry Price": 1908.28,
+        "Target": 2024.51,
+        "Stop Loss": 1830.79,
+        "Exit Price": 1914.64,
+        "P&L (%)": 0.33,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-18",
+        "Exit Date": "2026-05-25",
+        "Entry Price": 1894.06,
+        "Target": 2003.92,
+        "Stop Loss": 1820.81,
+        "Exit Price": 1931.94,
+        "P&L (%)": 2.0,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-19",
+        "Exit Date": "2026-05-26",
+        "Entry Price": 1925.28,
+        "Target": 2033.82,
+        "Stop Loss": 1852.92,
+        "Exit Price": 1938.21,
+        "P&L (%)": 0.67,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-22",
+        "Exit Date": "2026-05-29",
+        "Entry Price": 1948.45,
+        "Target": 2048.71,
+        "Stop Loss": 1881.61,
+        "Exit Price": 1915.93,
+        "P&L (%)": -1.67,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-26",
+        "Exit Date": "2026-06-02",
+        "Entry Price": 1938.21,
+        "Target": 2033.68,
+        "Stop Loss": 1874.55,
+        "Exit Price": 1897.54,
+        "P&L (%)": -2.1,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-01",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1923.69,
+        "Target": 2011.65,
+        "Stop Loss": 1865.05,
+        "Exit Price": 2011.65,
+        "P&L (%)": 4.57,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-04",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1954.31,
+        "Target": 2039.93,
+        "Stop Loss": 1897.24,
+        "Exit Price": 1939.2,
+        "P&L (%)": -0.77,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1966.25,
+        "Target": 2055.84,
+        "Stop Loss": 1906.51,
+        "Exit Price": 1906.51,
+        "P&L (%)": -3.04,
+        "Status": "Stop Loss Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-09",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1982.45,
+        "Target": 2072.55,
+        "Stop Loss": 1922.39,
+        "Exit Price": 1922.39,
+        "P&L (%)": -3.03,
+        "Status": "Stop Loss Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2111.5,
+        "Stop Loss": 1954.33,
+        "Exit Price": 2111.5,
+        "P&L (%)": 4.67,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-22",
+        "Entry Price": 2153.1,
+        "Target": 2256.5,
+        "Stop Loss": 2084.17,
+        "Exit Price": 2084.17,
+        "P&L (%)": -3.2,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      }
+    ],
+    "EMA Pullback (20) OR Volume Breakout": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1938.45,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1938.45,
+        "P&L (%)": 6.03,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-04-28",
+        "Exit Date": "2026-05-04",
+        "Entry Price": 1997.47,
+        "Target": 2122.07,
+        "Stop Loss": 1914.4,
+        "Exit Price": 1914.4,
+        "P&L (%)": -4.16,
+        "Status": "Stop Loss Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-05-05",
+        "Exit Date": "2026-05-12",
+        "Entry Price": 1900.82,
+        "Target": 2021.03,
+        "Stop Loss": 1820.67,
+        "Exit Price": 1898.93,
+        "P&L (%)": -0.1,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-13",
+        "Exit Date": "2026-05-20",
+        "Entry Price": 1908.28,
+        "Target": 2024.51,
+        "Stop Loss": 1830.79,
+        "Exit Price": 1914.64,
+        "P&L (%)": 0.33,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-18",
+        "Exit Date": "2026-05-25",
+        "Entry Price": 1894.06,
+        "Target": 2003.92,
+        "Stop Loss": 1820.81,
+        "Exit Price": 1931.94,
+        "P&L (%)": 2.0,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-19",
+        "Exit Date": "2026-05-26",
+        "Entry Price": 1925.28,
+        "Target": 2033.82,
+        "Stop Loss": 1852.92,
+        "Exit Price": 1938.21,
+        "P&L (%)": 0.67,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-22",
+        "Exit Date": "2026-05-29",
+        "Entry Price": 1948.45,
+        "Target": 2048.71,
+        "Stop Loss": 1881.61,
+        "Exit Price": 1915.93,
+        "P&L (%)": -1.67,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-26",
+        "Exit Date": "2026-06-02",
+        "Entry Price": 1938.21,
+        "Target": 2033.68,
+        "Stop Loss": 1874.55,
+        "Exit Price": 1897.54,
+        "P&L (%)": -2.1,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-01",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1923.69,
+        "Target": 2011.65,
+        "Stop Loss": 1865.05,
+        "Exit Price": 2011.65,
+        "P&L (%)": 4.57,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-04",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1954.31,
+        "Target": 2039.93,
+        "Stop Loss": 1897.24,
+        "Exit Price": 1939.2,
+        "P&L (%)": -0.77,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1966.25,
+        "Target": 2055.84,
+        "Stop Loss": 1906.51,
+        "Exit Price": 1906.51,
+        "P&L (%)": -3.04,
+        "Status": "Stop Loss Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-09",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1982.45,
+        "Target": 2072.55,
+        "Stop Loss": 1922.39,
+        "Exit Price": 1922.39,
+        "P&L (%)": -3.03,
+        "Status": "Stop Loss Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2111.5,
+        "Stop Loss": 1954.33,
+        "Exit Price": 2111.5,
+        "P&L (%)": 4.67,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-22",
+        "Entry Price": 2153.1,
+        "Target": 2256.5,
+        "Stop Loss": 2084.17,
+        "Exit Price": 2084.17,
+        "P&L (%)": -3.2,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      }
+    ],
+    "EMA Pullback (20) OR MACD Crossover": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1927.42,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1927.42,
+        "P&L (%)": 5.43,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-05-05",
+        "Exit Date": "2026-05-12",
+        "Entry Price": 1900.82,
+        "Target": 2021.03,
+        "Stop Loss": 1820.67,
+        "Exit Price": 1898.93,
+        "P&L (%)": -0.1,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-13",
+        "Exit Date": "2026-05-20",
+        "Entry Price": 1908.28,
+        "Target": 2024.51,
+        "Stop Loss": 1830.79,
+        "Exit Price": 1914.64,
+        "P&L (%)": 0.33,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-18",
+        "Exit Date": "2026-05-25",
+        "Entry Price": 1894.06,
+        "Target": 2003.92,
+        "Stop Loss": 1820.81,
+        "Exit Price": 1931.94,
+        "P&L (%)": 2.0,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-19",
+        "Exit Date": "2026-05-26",
+        "Entry Price": 1925.28,
+        "Target": 2033.82,
+        "Stop Loss": 1852.92,
+        "Exit Price": 1938.21,
+        "P&L (%)": 0.67,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-22",
+        "Exit Date": "2026-05-29",
+        "Entry Price": 1948.45,
+        "Target": 2048.71,
+        "Stop Loss": 1881.61,
+        "Exit Price": 1915.93,
+        "P&L (%)": -1.67,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-26",
+        "Exit Date": "2026-06-02",
+        "Entry Price": 1938.21,
+        "Target": 2033.68,
+        "Stop Loss": 1874.55,
+        "Exit Price": 1897.54,
+        "P&L (%)": -2.1,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-28",
+        "Exit Date": "2026-05-29",
+        "Entry Price": 1974.7,
+        "Target": 2044.59,
+        "Stop Loss": 1916.45,
+        "Exit Price": 1916.45,
+        "P&L (%)": -2.95,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-01",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1923.69,
+        "Target": 2011.65,
+        "Stop Loss": 1865.05,
+        "Exit Price": 2011.65,
+        "P&L (%)": 4.57,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-04",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1954.31,
+        "Target": 2039.93,
+        "Stop Loss": 1897.24,
+        "Exit Price": 1939.2,
+        "P&L (%)": -0.77,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1966.25,
+        "Target": 2055.84,
+        "Stop Loss": 1906.51,
+        "Exit Price": 1906.51,
+        "P&L (%)": -3.04,
+        "Status": "Stop Loss Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-09",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1982.45,
+        "Target": 2072.55,
+        "Stop Loss": 1922.39,
+        "Exit Price": 1922.39,
+        "P&L (%)": -3.03,
+        "Status": "Stop Loss Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-10",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1972.31,
+        "Target": 2043.28,
+        "Stop Loss": 1913.17,
+        "Exit Price": 1913.17,
+        "P&L (%)": -3.0,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2102.07,
+        "Stop Loss": 1954.33,
+        "Exit Price": 2102.07,
+        "P&L (%)": 4.21,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-22",
+        "Entry Price": 2153.1,
+        "Target": 2256.5,
+        "Stop Loss": 2084.17,
+        "Exit Price": 2084.17,
+        "P&L (%)": -3.2,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      }
+    ],
+    "EMA Pullback (20) OR Bollinger Rebound": [
+      {
+        "Trigger Date": "2026-04-21",
+        "Exit Date": "2026-04-22",
+        "Entry Price": 1686.04,
+        "Target": 1765.39,
+        "Stop Loss": 1619.91,
+        "Exit Price": 1765.39,
+        "P&L (%)": 4.71,
+        "Status": "Target Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1927.42,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1927.42,
+        "P&L (%)": 5.43,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-05-05",
+        "Exit Date": "2026-05-12",
+        "Entry Price": 1900.82,
+        "Target": 2021.03,
+        "Stop Loss": 1820.67,
+        "Exit Price": 1898.93,
+        "P&L (%)": -0.1,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-13",
+        "Exit Date": "2026-05-20",
+        "Entry Price": 1908.28,
+        "Target": 2024.51,
+        "Stop Loss": 1830.79,
+        "Exit Price": 1914.64,
+        "P&L (%)": 0.33,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-18",
+        "Exit Date": "2026-05-25",
+        "Entry Price": 1894.06,
+        "Target": 2003.92,
+        "Stop Loss": 1820.81,
+        "Exit Price": 1931.94,
+        "P&L (%)": 2.0,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-19",
+        "Exit Date": "2026-05-26",
+        "Entry Price": 1925.28,
+        "Target": 2033.82,
+        "Stop Loss": 1852.92,
+        "Exit Price": 1938.21,
+        "P&L (%)": 0.67,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-22",
+        "Exit Date": "2026-05-29",
+        "Entry Price": 1948.45,
+        "Target": 2048.71,
+        "Stop Loss": 1881.61,
+        "Exit Price": 1915.93,
+        "P&L (%)": -1.67,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-26",
+        "Exit Date": "2026-06-02",
+        "Entry Price": 1938.21,
+        "Target": 2033.68,
+        "Stop Loss": 1874.55,
+        "Exit Price": 1897.54,
+        "P&L (%)": -2.1,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-01",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1923.69,
+        "Target": 2011.65,
+        "Stop Loss": 1865.05,
+        "Exit Price": 2011.65,
+        "P&L (%)": 4.57,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-04",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1954.31,
+        "Target": 2039.93,
+        "Stop Loss": 1897.24,
+        "Exit Price": 1939.2,
+        "P&L (%)": -0.77,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1966.25,
+        "Target": 2055.84,
+        "Stop Loss": 1906.51,
+        "Exit Price": 1906.51,
+        "P&L (%)": -3.04,
+        "Status": "Stop Loss Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-09",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1982.45,
+        "Target": 2072.55,
+        "Stop Loss": 1922.39,
+        "Exit Price": 1922.39,
+        "P&L (%)": -3.03,
+        "Status": "Stop Loss Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2111.5,
+        "Stop Loss": 1954.33,
+        "Exit Price": 2111.5,
+        "P&L (%)": 4.67,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-22",
+        "Entry Price": 2153.1,
+        "Target": 2256.5,
+        "Stop Loss": 2084.17,
+        "Exit Price": 2084.17,
+        "P&L (%)": -3.2,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      }
+    ],
+    "EMA Pullback (20) OR High-Conviction 95% Pullback": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1938.45,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1938.45,
+        "P&L (%)": 6.03,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-05-05",
+        "Exit Date": "2026-05-12",
+        "Entry Price": 1900.82,
+        "Target": 2021.03,
+        "Stop Loss": 1820.67,
+        "Exit Price": 1898.93,
+        "P&L (%)": -0.1,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-13",
+        "Exit Date": "2026-05-20",
+        "Entry Price": 1908.28,
+        "Target": 2024.51,
+        "Stop Loss": 1830.79,
+        "Exit Price": 1914.64,
+        "P&L (%)": 0.33,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-18",
+        "Exit Date": "2026-05-25",
+        "Entry Price": 1894.06,
+        "Target": 2003.92,
+        "Stop Loss": 1820.81,
+        "Exit Price": 1931.94,
+        "P&L (%)": 2.0,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-19",
+        "Exit Date": "2026-05-26",
+        "Entry Price": 1925.28,
+        "Target": 2033.82,
+        "Stop Loss": 1852.92,
+        "Exit Price": 1938.21,
+        "P&L (%)": 0.67,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-22",
+        "Exit Date": "2026-05-29",
+        "Entry Price": 1948.45,
+        "Target": 2048.71,
+        "Stop Loss": 1881.61,
+        "Exit Price": 1915.93,
+        "P&L (%)": -1.67,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-05-26",
+        "Exit Date": "2026-06-02",
+        "Entry Price": 1938.21,
+        "Target": 2033.68,
+        "Stop Loss": 1874.55,
+        "Exit Price": 1897.54,
+        "P&L (%)": -2.1,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-01",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1923.69,
+        "Target": 2011.65,
+        "Stop Loss": 1865.05,
+        "Exit Price": 2011.65,
+        "P&L (%)": 4.57,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-04",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1954.31,
+        "Target": 2039.93,
+        "Stop Loss": 1897.24,
+        "Exit Price": 1939.2,
+        "P&L (%)": -0.77,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-12",
+        "Entry Price": 1966.25,
+        "Target": 2040.91,
+        "Stop Loss": 1870.68,
+        "Exit Price": 2017.2,
+        "P&L (%)": 2.59,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-09",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1982.45,
+        "Target": 2072.55,
+        "Stop Loss": 1922.39,
+        "Exit Price": 1922.39,
+        "P&L (%)": -3.03,
+        "Status": "Stop Loss Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2095.79,
+        "Stop Loss": 1916.61,
+        "Exit Price": 2095.79,
+        "P&L (%)": 3.9,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-26",
+        "Entry Price": 2153.1,
+        "Target": 2239.26,
+        "Stop Loss": 2042.81,
+        "Exit Price": 2131.0,
+        "P&L (%)": -1.03,
+        "Status": "Time Exit",
+        "Days Held": 5
+      }
+    ],
+    "RSI Reversal (Oversold) OR RSI Pullback (Uptrend)": [
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      }
+    ],
+    "RSI Reversal (Oversold) OR Volume Breakout": [
+      {
+        "Trigger Date": "2026-04-28",
+        "Exit Date": "2026-05-04",
+        "Entry Price": 1997.47,
+        "Target": 2122.07,
+        "Stop Loss": 1914.4,
+        "Exit Price": 1914.4,
+        "P&L (%)": -4.16,
+        "Status": "Stop Loss Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-22",
+        "Entry Price": 2153.1,
+        "Target": 2256.5,
+        "Stop Loss": 2084.17,
+        "Exit Price": 2084.17,
+        "P&L (%)": -3.2,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      }
+    ],
+    "RSI Reversal (Oversold) OR MACD Crossover": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1916.39,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1916.39,
+        "P&L (%)": 4.83,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-05-28",
+        "Exit Date": "2026-05-29",
+        "Entry Price": 1974.7,
+        "Target": 2044.59,
+        "Stop Loss": 1916.45,
+        "Exit Price": 1916.45,
+        "P&L (%)": -2.95,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-10",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1972.31,
+        "Target": 2043.28,
+        "Stop Loss": 1913.17,
+        "Exit Price": 1913.17,
+        "P&L (%)": -3.0,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2092.64,
+        "Stop Loss": 1954.33,
+        "Exit Price": 2092.64,
+        "P&L (%)": 3.74,
+        "Status": "Target Hit",
+        "Days Held": 5
+      }
+    ],
+    "RSI Reversal (Oversold) OR Bollinger Rebound": [
+      {
+        "Trigger Date": "2026-04-21",
+        "Exit Date": "2026-04-22",
+        "Entry Price": 1686.04,
+        "Target": 1765.39,
+        "Stop Loss": 1619.91,
+        "Exit Price": 1765.39,
+        "P&L (%)": 4.71,
+        "Status": "Target Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1916.39,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1916.39,
+        "P&L (%)": 4.83,
+        "Status": "Target Hit",
+        "Days Held": 4
+      }
+    ],
+    "RSI Reversal (Oversold) OR High-Conviction 95% Pullback": [
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-12",
+        "Entry Price": 1966.25,
+        "Target": 2025.98,
+        "Stop Loss": 1834.84,
+        "Exit Price": 2025.98,
+        "P&L (%)": 3.04,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-15",
+        "Entry Price": 2017.2,
+        "Target": 2080.07,
+        "Stop Loss": 1878.89,
+        "Exit Price": 2080.07,
+        "P&L (%)": 3.12,
+        "Status": "Target Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-26",
+        "Entry Price": 2153.1,
+        "Target": 2222.03,
+        "Stop Loss": 2001.45,
+        "Exit Price": 2131.0,
+        "P&L (%)": -1.03,
+        "Status": "Time Exit",
+        "Days Held": 5
+      }
+    ],
+    "RSI Pullback (Uptrend) OR Volume Breakout": [
+      {
+        "Trigger Date": "2026-04-28",
+        "Exit Date": "2026-05-04",
+        "Entry Price": 1997.47,
+        "Target": 2122.07,
+        "Stop Loss": 1914.4,
+        "Exit Price": 1914.4,
+        "P&L (%)": -4.16,
+        "Status": "Stop Loss Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-22",
+        "Entry Price": 2153.1,
+        "Target": 2256.5,
+        "Stop Loss": 2084.17,
+        "Exit Price": 2084.17,
+        "P&L (%)": -3.2,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      }
+    ],
+    "RSI Pullback (Uptrend) OR MACD Crossover": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1916.39,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1916.39,
+        "P&L (%)": 4.83,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-05-28",
+        "Exit Date": "2026-05-29",
+        "Entry Price": 1974.7,
+        "Target": 2044.59,
+        "Stop Loss": 1916.45,
+        "Exit Price": 1916.45,
+        "P&L (%)": -2.95,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-10",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1972.31,
+        "Target": 2043.28,
+        "Stop Loss": 1913.17,
+        "Exit Price": 1913.17,
+        "P&L (%)": -3.0,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2092.64,
+        "Stop Loss": 1954.33,
+        "Exit Price": 2092.64,
+        "P&L (%)": 3.74,
+        "Status": "Target Hit",
+        "Days Held": 5
+      }
+    ],
+    "RSI Pullback (Uptrend) OR Bollinger Rebound": [
+      {
+        "Trigger Date": "2026-04-21",
+        "Exit Date": "2026-04-22",
+        "Entry Price": 1686.04,
+        "Target": 1765.39,
+        "Stop Loss": 1619.91,
+        "Exit Price": 1765.39,
+        "P&L (%)": 4.71,
+        "Status": "Target Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1916.39,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1916.39,
+        "P&L (%)": 4.83,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      }
+    ],
+    "RSI Pullback (Uptrend) OR High-Conviction 95% Pullback": [
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-12",
+        "Entry Price": 1966.25,
+        "Target": 2025.98,
+        "Stop Loss": 1834.84,
+        "Exit Price": 2025.98,
+        "P&L (%)": 3.04,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-15",
+        "Entry Price": 2017.2,
+        "Target": 2080.07,
+        "Stop Loss": 1878.89,
+        "Exit Price": 2080.07,
+        "P&L (%)": 3.12,
+        "Status": "Target Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-26",
+        "Entry Price": 2153.1,
+        "Target": 2222.03,
+        "Stop Loss": 2001.45,
+        "Exit Price": 2131.0,
+        "P&L (%)": -1.03,
+        "Status": "Time Exit",
+        "Days Held": 5
+      }
+    ],
+    "Volume Breakout OR MACD Crossover": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1916.39,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1916.39,
+        "P&L (%)": 4.83,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-04-28",
+        "Exit Date": "2026-05-04",
+        "Entry Price": 1997.47,
+        "Target": 2122.07,
+        "Stop Loss": 1914.4,
+        "Exit Price": 1914.4,
+        "P&L (%)": -4.16,
+        "Status": "Stop Loss Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-05-28",
+        "Exit Date": "2026-05-29",
+        "Entry Price": 1974.7,
+        "Target": 2044.59,
+        "Stop Loss": 1916.45,
+        "Exit Price": 1916.45,
+        "P&L (%)": -2.95,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-10",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1972.31,
+        "Target": 2043.28,
+        "Stop Loss": 1913.17,
+        "Exit Price": 1913.17,
+        "P&L (%)": -3.0,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2092.64,
+        "Stop Loss": 1954.33,
+        "Exit Price": 2092.64,
+        "P&L (%)": 3.74,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-22",
+        "Entry Price": 2153.1,
+        "Target": 2256.5,
+        "Stop Loss": 2084.17,
+        "Exit Price": 2084.17,
+        "P&L (%)": -3.2,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      }
+    ],
+    "Volume Breakout OR Bollinger Rebound": [
+      {
+        "Trigger Date": "2026-04-21",
+        "Exit Date": "2026-04-22",
+        "Entry Price": 1686.04,
+        "Target": 1765.39,
+        "Stop Loss": 1619.91,
+        "Exit Price": 1765.39,
+        "P&L (%)": 4.71,
+        "Status": "Target Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1916.39,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1916.39,
+        "P&L (%)": 4.83,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-04-28",
+        "Exit Date": "2026-05-04",
+        "Entry Price": 1997.47,
+        "Target": 2122.07,
+        "Stop Loss": 1914.4,
+        "Exit Price": 1914.4,
+        "P&L (%)": -4.16,
+        "Status": "Stop Loss Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-22",
+        "Entry Price": 2153.1,
+        "Target": 2256.5,
+        "Stop Loss": 2084.17,
+        "Exit Price": 2084.17,
+        "P&L (%)": -3.2,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      }
+    ],
+    "Volume Breakout OR High-Conviction 95% Pullback": [
+      {
+        "Trigger Date": "2026-04-28",
+        "Exit Date": "2026-05-04",
+        "Entry Price": 1997.47,
+        "Target": 2122.07,
+        "Stop Loss": 1914.4,
+        "Exit Price": 1914.4,
+        "P&L (%)": -4.16,
+        "Status": "Stop Loss Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-12",
+        "Entry Price": 1966.25,
+        "Target": 2025.98,
+        "Stop Loss": 1834.84,
+        "Exit Price": 2025.98,
+        "P&L (%)": 3.04,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-15",
+        "Entry Price": 2017.2,
+        "Target": 2080.07,
+        "Stop Loss": 1878.89,
+        "Exit Price": 2080.07,
+        "P&L (%)": 3.12,
+        "Status": "Target Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-26",
+        "Entry Price": 2153.1,
+        "Target": 2239.26,
+        "Stop Loss": 2042.81,
+        "Exit Price": 2131.0,
+        "P&L (%)": -1.03,
+        "Status": "Time Exit",
+        "Days Held": 5
+      }
+    ],
+    "MACD Crossover OR Bollinger Rebound": [
+      {
+        "Trigger Date": "2026-04-21",
+        "Exit Date": "2026-04-22",
+        "Entry Price": 1686.04,
+        "Target": 1765.39,
+        "Stop Loss": 1619.91,
+        "Exit Price": 1765.39,
+        "P&L (%)": 4.71,
+        "Status": "Target Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1916.39,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1916.39,
+        "P&L (%)": 4.83,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-05-28",
+        "Exit Date": "2026-05-29",
+        "Entry Price": 1974.7,
+        "Target": 2044.59,
+        "Stop Loss": 1916.45,
+        "Exit Price": 1916.45,
+        "P&L (%)": -2.95,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-10",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1972.31,
+        "Target": 2043.28,
+        "Stop Loss": 1913.17,
+        "Exit Price": 1913.17,
+        "P&L (%)": -3.0,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2092.64,
+        "Stop Loss": 1954.33,
+        "Exit Price": 2092.64,
+        "P&L (%)": 3.74,
+        "Status": "Target Hit",
+        "Days Held": 5
+      }
+    ],
+    "MACD Crossover OR High-Conviction 95% Pullback": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1916.39,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1916.39,
+        "P&L (%)": 4.83,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-05-28",
+        "Exit Date": "2026-05-29",
+        "Entry Price": 1974.7,
+        "Target": 2044.59,
+        "Stop Loss": 1916.45,
+        "Exit Price": 1916.45,
+        "P&L (%)": -2.95,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-12",
+        "Entry Price": 1966.25,
+        "Target": 2025.98,
+        "Stop Loss": 1834.84,
+        "Exit Price": 2025.98,
+        "P&L (%)": 3.04,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-10",
+        "Exit Date": "2026-06-11",
+        "Entry Price": 1972.31,
+        "Target": 2043.28,
+        "Stop Loss": 1913.17,
+        "Exit Price": 1913.17,
+        "P&L (%)": -3.0,
+        "Status": "Stop Loss Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-15",
+        "Entry Price": 2017.2,
+        "Target": 2086.36,
+        "Stop Loss": 1916.61,
+        "Exit Price": 2086.36,
+        "P&L (%)": 3.43,
+        "Status": "Target Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-26",
+        "Entry Price": 2153.1,
+        "Target": 2222.03,
+        "Stop Loss": 2001.45,
+        "Exit Price": 2131.0,
+        "P&L (%)": -1.03,
+        "Status": "Time Exit",
+        "Days Held": 5
+      }
+    ],
+    "Bollinger Rebound OR High-Conviction 95% Pullback": [
+      {
+        "Trigger Date": "2026-04-21",
+        "Exit Date": "2026-04-22",
+        "Entry Price": 1686.04,
+        "Target": 1765.39,
+        "Stop Loss": 1619.91,
+        "Exit Price": 1765.39,
+        "P&L (%)": 4.71,
+        "Status": "Target Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1916.39,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1916.39,
+        "P&L (%)": 4.83,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-12",
+        "Entry Price": 1966.25,
+        "Target": 2025.98,
+        "Stop Loss": 1834.84,
+        "Exit Price": 2025.98,
+        "P&L (%)": 3.04,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-15",
+        "Entry Price": 2017.2,
+        "Target": 2080.07,
+        "Stop Loss": 1878.89,
+        "Exit Price": 2080.07,
+        "P&L (%)": 3.12,
+        "Status": "Target Hit",
+        "Days Held": 1
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-26",
+        "Entry Price": 2153.1,
+        "Target": 2222.03,
+        "Stop Loss": 2001.45,
+        "Exit Price": 2131.0,
+        "P&L (%)": -1.03,
+        "Status": "Time Exit",
+        "Days Held": 5
+      }
+    ],
+    "Consensus (At least 2)": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1923.74,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1923.74,
+        "P&L (%)": 5.23,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-03",
+        "Exit Date": "2026-06-05",
+        "Entry Price": 1917.92,
+        "Target": 2003.09,
+        "Stop Loss": 1861.14,
+        "Exit Price": 2003.09,
+        "P&L (%)": 4.44,
+        "Status": "Target Hit",
+        "Days Held": 2
+      },
+      {
+        "Trigger Date": "2026-06-05",
+        "Exit Date": "2026-06-12",
+        "Entry Price": 1966.25,
+        "Target": 2040.91,
+        "Stop Loss": 1870.68,
+        "Exit Price": 2017.2,
+        "P&L (%)": 2.59,
+        "Status": "Time Exit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2094.74,
+        "Stop Loss": 1929.18,
+        "Exit Price": 2094.74,
+        "P&L (%)": 3.84,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-26",
+        "Entry Price": 2153.1,
+        "Target": 2245.01,
+        "Stop Loss": 2056.6,
+        "Exit Price": 2131.0,
+        "P&L (%)": -1.03,
+        "Status": "Time Exit",
+        "Days Held": 5
+      }
+    ],
+    "Consensus (At least 3)": [
+      {
+        "Trigger Date": "2026-04-22",
+        "Exit Date": "2026-04-28",
+        "Entry Price": 1828.13,
+        "Target": 1923.74,
+        "Stop Loss": 1754.58,
+        "Exit Price": 1923.74,
+        "P&L (%)": 5.23,
+        "Status": "Target Hit",
+        "Days Held": 4
+      },
+      {
+        "Trigger Date": "2026-06-12",
+        "Exit Date": "2026-06-19",
+        "Entry Price": 2017.2,
+        "Target": 2094.74,
+        "Stop Loss": 1929.18,
+        "Exit Price": 2094.74,
+        "P&L (%)": 3.84,
+        "Status": "Target Hit",
+        "Days Held": 5
+      },
+      {
+        "Trigger Date": "2026-06-19",
+        "Exit Date": "2026-06-26",
+        "Entry Price": 2153.1,
+        "Target": 2245.01,
+        "Stop Loss": 2056.6,
+        "Exit Price": 2131.0,
+        "P&L (%)": -1.03,
+        "Status": "Time Exit",
+        "Days Held": 5
+      }
+    ],
+    "Consensus (At least 4)": []
+  }
+}
