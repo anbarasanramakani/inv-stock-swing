@@ -4,10 +4,6 @@ Intraday Buy-Sell (Long) and Sell-Buy (Short) strategy check functions
 and 10-day backtesting simulation.
 """
 import pandas as pd
-import numpy as np
-import os
-import json
-import datetime
 import screeners as scr
 
 def calculate_intraday_indicators(df: pd.DataFrame) -> pd.DataFrame | None:
@@ -22,6 +18,39 @@ def calculate_intraday_indicators(df: pd.DataFrame) -> pd.DataFrame | None:
     return df_ind
 
 # ---------------------------------------------------------------------------
+# Shared signal builder
+# ---------------------------------------------------------------------------
+
+def _intra_signal(r, *, strategy: str, sl_mult: float, tgt_mult: float,
+                  reason: str, is_short: bool,
+                  entry_low: float = 0.995, entry_high: float = 1.005) -> dict:
+    """Build a display-ready intraday signal with ATR-scaled stop/target.
+
+    For shorts the stop sits *above* entry and the target *below* it; the
+    reward:risk label is derived from the multipliers so it can never disagree
+    with the printed levels.
+    """
+    atr = r['ATR']
+    entry = r['Close']
+    if is_short:
+        stop, target, trade_type = entry + sl_mult * atr, entry - tgt_mult * atr, "SELL-BUY"
+    else:
+        stop, target, trade_type = entry - sl_mult * atr, entry + tgt_mult * atr, "BUY-SELL"
+    return {
+        "Strategy": strategy,
+        "Price": round(entry, 2),
+        "RSI": round(r['RSI'], 1),
+        "Vol_Ratio": round(r['Vol_Ratio'], 2),
+        "Entry Range": f"{round(entry * entry_low, 2)} - {round(entry * entry_high, 2)}",
+        "Stop Loss": round(stop, 2),
+        "Target": round(target, 2),
+        "Risk_Reward": f"1:{tgt_mult / sl_mult:.2f}",
+        "Reason": reason,
+        "Type": trade_type,
+    }
+
+
+# ---------------------------------------------------------------------------
 # 🟢 Buy-First (Long) Strategies
 # ---------------------------------------------------------------------------
 
@@ -29,83 +58,43 @@ def check_vwap_bounce_long(df: pd.DataFrame, i: int) -> dict | None:
     if i < 1:
         return None
     r = df.iloc[i]
-    # Close > VWAP, Low touched VWAP (within 0.5%)
-    cond1 = r['Close'] > r['VWAP']
-    cond2 = r['Low'] <= r['VWAP'] * 1.005
-    cond3 = r['Close'] >= r['Open']  # Green candle
-    cond4 = r['RSI'] > 40
-    cond5 = r['Vol_Ratio'] >= 1.2
-    
-    if cond1 and cond2 and cond3 and cond4 and cond5:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Strategy": "VWAP Bounce (Long)",
-            "Price": round(entry, 2),
-            "RSI": round(r['RSI'], 1),
-            "Vol_Ratio": round(r['Vol_Ratio'], 2),
-            "Entry Range": f"{round(entry * 0.995, 2)} - {round(entry * 1.005, 2)}",
-            "Stop Loss": round(entry - 0.7 * atr, 2),
-            "Target": round(entry + 1.0 * atr, 2),
-            "Risk_Reward": "1:1.43",
-            "Reason": "Bullish rebound from dynamic VWAP support under healthy volume.",
-            "Type": "BUY-SELL"
-        }
+    # Close reclaims VWAP after tagging it (within 0.5%) on a green, high-volume bar.
+    if (r['Close'] > r['VWAP'] and r['Low'] <= r['VWAP'] * 1.005
+            and r['Close'] >= r['Open'] and r['RSI'] > 40 and r['Vol_Ratio'] >= 1.2):
+        return _intra_signal(
+            r, strategy="VWAP Bounce (Long)", sl_mult=0.7, tgt_mult=1.0, is_short=False,
+            reason="Bullish rebound from dynamic VWAP support under healthy volume.",
+        )
     return None
+
 
 def check_orb_breakout_long(df: pd.DataFrame, i: int) -> dict | None:
     if i < 1:
         return None
-    r = df.iloc[i]
-    p = df.iloc[i-1]
-    # Close > previous day's High
-    cond1 = r['Close'] > p['High']
-    cond2 = r['Vol_Ratio'] >= 1.5
-    cond3 = r['MACD_Hist'] > 0
-    
-    if cond1 and cond2 and cond3:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Strategy": "ORB Breakout (Long)",
-            "Price": round(entry, 2),
-            "RSI": round(r['RSI'], 1),
-            "Vol_Ratio": round(r['Vol_Ratio'], 2),
-            "Entry Range": f"{round(entry, 2)} - {round(entry * 1.01, 2)}",
-            "Stop Loss": round(entry - 0.8 * atr, 2),
-            "Target": round(entry + 1.2 * atr, 2),
-            "Risk_Reward": "1:1.50",
-            "Reason": "Momentum breakout past previous day's high confirmed by volume & MACD.",
-            "Type": "BUY-SELL"
-        }
+    r, p = df.iloc[i], df.iloc[i - 1]
+    # Close breaks the previous bar's high with volume and positive MACD momentum.
+    if r['Close'] > p['High'] and r['Vol_Ratio'] >= 1.5 and r['MACD_Hist'] > 0:
+        return _intra_signal(
+            r, strategy="ORB Breakout (Long)", sl_mult=0.8, tgt_mult=1.2, is_short=False,
+            entry_low=1.0, entry_high=1.01,
+            reason="Momentum breakout past previous day's high confirmed by volume & MACD.",
+        )
     return None
+
 
 def check_ema_crossover_long(df: pd.DataFrame, i: int) -> dict | None:
     if i < 1:
         return None
-    r = df.iloc[i]
-    p = df.iloc[i-1]
-    # EMA9 crosses above EMA21
-    cond1 = p['EMA9'] <= p['EMA21'] and r['EMA9'] > r['EMA21']
-    cond2 = r['Close'] > r['EMA50']
-    cond3 = 45 <= r['RSI'] <= 70
-    
-    if cond1 and cond2 and cond3:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Strategy": "EMA 9/21 Crossover (Long)",
-            "Price": round(entry, 2),
-            "RSI": round(r['RSI'], 1),
-            "Vol_Ratio": round(r['Vol_Ratio'], 2),
-            "Entry Range": f"{round(entry * 0.995, 2)} - {round(entry * 1.005, 2)}",
-            "Stop Loss": round(entry - 0.7 * atr, 2),
-            "Target": round(entry + 1.0 * atr, 2),
-            "Risk_Reward": "1:1.43",
-            "Reason": "Bullish moving average crossover in primary uptrend.",
-            "Type": "BUY-SELL"
-        }
+    r, p = df.iloc[i], df.iloc[i - 1]
+    # EMA9 crosses above EMA21 while price holds above EMA50.
+    if (p['EMA9'] <= p['EMA21'] and r['EMA9'] > r['EMA21']
+            and r['Close'] > r['EMA50'] and 45 <= r['RSI'] <= 70):
+        return _intra_signal(
+            r, strategy="EMA 9/21 Crossover (Long)", sl_mult=0.7, tgt_mult=1.0, is_short=False,
+            reason="Bullish moving average crossover in primary uptrend.",
+        )
     return None
+
 
 # ---------------------------------------------------------------------------
 # 🔴 Sell-First (Short) Strategies
@@ -115,83 +104,43 @@ def check_vwap_rejection_short(df: pd.DataFrame, i: int) -> dict | None:
     if i < 1:
         return None
     r = df.iloc[i]
-    # Close < VWAP, High touched VWAP (within 0.5%)
-    cond1 = r['Close'] < r['VWAP']
-    cond2 = r['High'] >= r['VWAP'] * 0.995
-    cond3 = r['Close'] < r['Open']  # Red candle
-    cond4 = r['RSI'] < 55
-    cond5 = r['Vol_Ratio'] >= 1.2
-    
-    if cond1 and cond2 and cond3 and cond4 and cond5:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Strategy": "VWAP Rejection (Short)",
-            "Price": round(entry, 2),
-            "RSI": round(r['RSI'], 1),
-            "Vol_Ratio": round(r['Vol_Ratio'], 2),
-            "Entry Range": f"{round(entry * 0.995, 2)} - {round(entry * 1.005, 2)}",
-            "Stop Loss": round(entry + 0.7 * atr, 2),  # SL is above entry for short
-            "Target": round(entry - 1.0 * atr, 2),     # Target is below entry for short
-            "Risk_Reward": "1:1.43",
-            "Reason": "Bearish rejection from dynamic VWAP resistance line.",
-            "Type": "SELL-BUY"
-        }
+    # Close fails at VWAP after tagging it from below on a red, high-volume bar.
+    if (r['Close'] < r['VWAP'] and r['High'] >= r['VWAP'] * 0.995
+            and r['Close'] < r['Open'] and r['RSI'] < 55 and r['Vol_Ratio'] >= 1.2):
+        return _intra_signal(
+            r, strategy="VWAP Rejection (Short)", sl_mult=0.7, tgt_mult=1.0, is_short=True,
+            reason="Bearish rejection from dynamic VWAP resistance line.",
+        )
     return None
+
 
 def check_gap_down_short(df: pd.DataFrame, i: int) -> dict | None:
     if i < 1:
         return None
-    r = df.iloc[i]
-    p = df.iloc[i-1]
-    # Open gap down >= 0.5%
-    cond1 = r['Open'] < p['Close'] * 0.995
-    cond2 = r['Close'] < r['Open']  # Red candle
-    cond3 = r['Vol_Ratio'] >= 1.3
-    
-    if cond1 and cond2 and cond3:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Strategy": "Gap-Down Continuation (Short)",
-            "Price": round(entry, 2),
-            "RSI": round(r['RSI'], 1),
-            "Vol_Ratio": round(r['Vol_Ratio'], 2),
-            "Entry Range": f"{round(entry * 0.99, 2)} - {round(entry, 2)}",
-            "Stop Loss": round(entry + 0.8 * atr, 2),
-            "Target": round(entry - 1.2 * atr, 2),
-            "Risk_Reward": "1:1.50",
-            "Reason": "Sustained gap down with volume indicating strong institutional selling.",
-            "Type": "SELL-BUY"
-        }
+    r, p = df.iloc[i], df.iloc[i - 1]
+    # Gap down >= 0.5% that keeps selling into the close on elevated volume.
+    if r['Open'] < p['Close'] * 0.995 and r['Close'] < r['Open'] and r['Vol_Ratio'] >= 1.3:
+        return _intra_signal(
+            r, strategy="Gap-Down Continuation (Short)", sl_mult=0.8, tgt_mult=1.2, is_short=True,
+            entry_low=0.99, entry_high=1.0,
+            reason="Sustained gap down with volume indicating strong institutional selling.",
+        )
     return None
+
 
 def check_ema_crossover_short(df: pd.DataFrame, i: int) -> dict | None:
     if i < 1:
         return None
-    r = df.iloc[i]
-    p = df.iloc[i-1]
-    # EMA9 crosses below EMA21
-    cond1 = p['EMA9'] >= p['EMA21'] and r['EMA9'] < r['EMA21']
-    cond2 = r['Close'] < r['EMA50']
-    cond3 = 30 <= r['RSI'] <= 55
-    
-    if cond1 and cond2 and cond3:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Strategy": "EMA 9/21 Crossover (Short)",
-            "Price": round(entry, 2),
-            "RSI": round(r['RSI'], 1),
-            "Vol_Ratio": round(r['Vol_Ratio'], 2),
-            "Entry Range": f"{round(entry * 0.995, 2)} - {round(entry * 1.005, 2)}",
-            "Stop Loss": round(entry + 0.7 * atr, 2),
-            "Target": round(entry - 1.0 * atr, 2),
-            "Risk_Reward": "1:1.43",
-            "Reason": "Bearish moving average crossover in primary downtrend.",
-            "Type": "SELL-BUY"
-        }
+    r, p = df.iloc[i], df.iloc[i - 1]
+    # EMA9 crosses below EMA21 while price stays under EMA50.
+    if (p['EMA9'] >= p['EMA21'] and r['EMA9'] < r['EMA21']
+            and r['Close'] < r['EMA50'] and 30 <= r['RSI'] <= 55):
+        return _intra_signal(
+            r, strategy="EMA 9/21 Crossover (Short)", sl_mult=0.7, tgt_mult=1.0, is_short=True,
+            reason="Bearish moving average crossover in primary downtrend.",
+        )
     return None
+
 
 # ---------------------------------------------------------------------------
 # Screener Registries & Runner

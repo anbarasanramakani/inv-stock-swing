@@ -1,216 +1,47 @@
 """
 optimizer.py
 Backtesting and optimization engine for multi-strategy evaluation.
-Tests 6 individual strategies and 33 mixed combinations (AND, OR, Consensus) over 3 months.
+
+Evaluates every individual strategy defined in ``strategies.py`` plus their
+pairwise AND / OR combinations and 2/3/4-of-N consensus models over a rolling
+backtest window. Entry conditions and ATR stop/target multipliers are imported
+from ``strategies.py`` so this engine can never drift from the live screeners.
 """
-import pandas as pd
-import numpy as np
+import json
+import os
+import datetime
 import itertools
+
+import numpy as np
+import pandas as pd
+
 import screeners as scr
+import strategies as strat
+
+
+class NumpyEncoder(json.JSONEncoder):
+    """JSON encoder that understands numpy scalars and pandas/py datetimes."""
+
+    def default(self, obj):
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, (pd.Timestamp, datetime.date, datetime.datetime)):
+            return obj.isoformat()
+        return super().default(obj)
+
 
 # ---------------------------------------------------------------------------
-# Individual Strategy Checkers (Fast, index-based)
+# Individual strategy checkers — derived from the shared spec registry.
+# Each returns {"Price", "Target", "Stop Loss", "Strategy"} or None at index i.
 # ---------------------------------------------------------------------------
 
-def check_ema_pullback(df: pd.DataFrame, i: int) -> dict | None:
-    if i < 1:
-        return None
-    r = df.iloc[i]
-    p = df.iloc[i-1]
-    
-    trend_ok = r['Close'] > r['EMA50'] > r['EMA200']
-    pullback_ok = (r['Low'] <= r['EMA20'] * 1.01) and (r['Close'] >= r['EMA20'] * 0.99)
-    candle_ok = r['Close'] >= r['Open'] or r['Close'] > p['Close']
-    
-    if trend_ok and pullback_ok and candle_ok:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Price": entry,
-            "Target": entry + 2.0 * atr,  # Refactored from 1.5 to 2.0
-            "Stop Loss": entry - 1.5 * atr,  # Refactored from 1.0 to 1.5
-            "Strategy": "EMA Pullback (20)"
-        }
-    return None
+def _make_check(spec):
+    return lambda df, i: strat.price_targets(spec, df, i)
 
-def check_rsi_reversal(df: pd.DataFrame, i: int) -> dict | None:
-    if i < 2:
-        return None
-    r = df.iloc[i]
-    recent_rsi = df['RSI'].iloc[i-2:i+1].tolist()
-    
-    # RSI crossed above 30 in the last 3 bars + trend filter (Close > EMA200)
-    if recent_rsi[-1] > 30 and any(v < 30 for v in recent_rsi[:-1]) and r['Close'] > r['EMA200']:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Price": entry,
-            "Target": entry + 1.8 * atr,  # Refactored from 1.2 to 1.8
-            "Stop Loss": entry - 1.0 * atr,
-            "Strategy": "RSI Reversal (Oversold)"
-        }
-    return None
+CHECK_FUNCTIONS = {spec.name: _make_check(spec) for spec in strat.SPECS}
 
-def check_rsi_pullback(df: pd.DataFrame, i: int) -> dict | None:
-    if i < 1:
-        return None
-    r = df.iloc[i]
-    p = df.iloc[i-1]
-    
-    trend_ok = r['Close'] > r['EMA50']
-    rsi_pullback = 38 <= r['RSI'] <= 55 and r['RSI'] > p['RSI']  # Refactored range
-    green_candle = r['Close'] > r['Open']
-    vol_ok = r['Vol_Ratio'] >= 1.1  # Added volume confirmation
-    
-    if trend_ok and rsi_pullback and green_candle and vol_ok:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Price": entry,
-            "Target": entry + 1.5 * atr,
-            "Stop Loss": entry - 1.0 * atr,
-            "Strategy": "RSI Pullback (Uptrend)"
-        }
-    return None
-
-def check_volume_breakout(df: pd.DataFrame, i: int) -> dict | None:
-    if i < 20:
-        return None
-    r = df.iloc[i]
-    price_high20 = df['Close'].iloc[i-20:i].max()
-    price_breakout = r['Close'] > price_high20
-    volume_spike = r['Vol_Ratio'] >= 2.0  # Refactored from 1.8 to 2.0
-    above_ema20 = r['Close'] > r['EMA20']  # Added above EMA20 filter
-    
-    if price_breakout and volume_spike and above_ema20:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Price": entry,
-            "Target": entry + 1.5 * atr,
-            "Stop Loss": entry - 1.0 * atr,
-            "Strategy": "Volume Breakout"
-        }
-    return None
-
-def check_macd_crossover(df: pd.DataFrame, i: int) -> dict | None:
-    if i < 1:
-        return None
-    r = df.iloc[i]
-    p = df.iloc[i-1]
-    
-    crossed_above = p['MACD_Hist'] <= 0 < r['MACD_Hist']
-    near_zero = abs(r['MACD']) < abs(r['Close']) * 0.03
-    not_overbought = r['RSI'] < 65  # Added RSI filter
-    
-    if crossed_above and near_zero and not_overbought:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Price": entry,
-            "Target": entry + 1.5 * atr,  # Refactored from 1.2 to 1.5
-            "Stop Loss": entry - 1.0 * atr,
-            "Strategy": "MACD Crossover"
-        }
-    return None
-
-def check_bollinger_rebound(df: pd.DataFrame, i: int) -> dict | None:
-    if i < 1:
-        return None
-    r = df.iloc[i]
-    p = df.iloc[i-1]
-    
-    touched_lower = (p['Low'] <= p['BB_Lower']) or (r['Low'] <= r['BB_Lower'])
-    closed_inside = r['Close'] > r['BB_Lower']
-    green_candle = r['Close'] > r['Open']
-    trend_ok = r['Close'] > r['EMA50']  # Added trend filter
-    
-    if touched_lower and closed_inside and green_candle and trend_ok:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Price": entry,
-            "Target": entry + 1.5 * atr,  # Refactored from 1.2 to 1.5
-            "Stop Loss": entry - 1.0 * atr,
-            "Strategy": "Bollinger Rebound"
-        }
-    return None
-
-def check_supertrend_reversal(df: pd.DataFrame, i: int) -> dict | None:
-    if i < 1:
-        return None
-    r = df.iloc[i]
-    p = df.iloc[i-1]
-    
-    crossed_up = p['ST_Direction'] == -1 and r['ST_Direction'] == 1
-    trend_ok = r['Close'] > r['EMA50']
-    
-    if crossed_up and trend_ok:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Price": entry,
-            "Target": entry + 2.0 * atr,
-            "Stop Loss": entry - 1.5 * atr,
-            "Strategy": "Supertrend Reversal"
-        }
-    return None
-
-def check_adx_trend_strength(df: pd.DataFrame, i: int) -> dict | None:
-    if i < 1:
-        return None
-    r = df.iloc[i]
-    
-    strong_trend = r['ADX'] > 25
-    bullish = r['PlusDI'] > r['MinusDI']
-    above_ema20 = r['Close'] > r['EMA20']
-    momentum_ok = 45 <= r['RSI'] <= 65
-    
-    if strong_trend and bullish and above_ema20 and momentum_ok:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Price": entry,
-            "Target": entry + 2.0 * atr,
-            "Stop Loss": entry - 1.5 * atr,
-            "Strategy": "ADX Trend Strength"
-        }
-    return None
-
-def check_high_conviction_95pct(df: pd.DataFrame, i: int) -> dict | None:
-    if i < 20:
-        return None
-    r = df.iloc[i]
-    p = df.iloc[i-1]
-    
-    trend_ok = r['Close'] > r['EMA20'] and r['EMA20'] > r['EMA50'] > r['EMA200']
-    pullback_ok = (r['Low'] <= r['EMA20'] * 1.01) or (35 <= r['RSI'] <= 48)
-    candle_ok = r['Close'] >= r['Open'] or r['Close'] > p['Close']
-    vol_ok = r['Vol_Ratio'] >= 1.1
-    
-    if trend_ok and pullback_ok and candle_ok and vol_ok:
-        atr = r['ATR']
-        entry = r['Close']
-        return {
-            "Price": entry,
-            "Target": entry + 1.2 * atr,  # Refactored from 1.0 to 1.2
-            "Stop Loss": entry - 1.8 * atr,  # Refactored from 2.2 to 1.8
-            "Strategy": "High-Conviction 95% Pullback"
-        }
-    return None
-
-# Mapping of individual strategies
-CHECK_FUNCTIONS = {
-    "EMA Pullback (20)": check_ema_pullback,
-    "RSI Reversal (Oversold)": check_rsi_reversal,
-    "RSI Pullback (Uptrend)": check_rsi_pullback,
-    "Volume Breakout": check_volume_breakout,
-    "MACD Crossover": check_macd_crossover,
-    "Bollinger Rebound": check_bollinger_rebound,
-    "Supertrend Reversal": check_supertrend_reversal,
-    "ADX Trend Strength": check_adx_trend_strength,
-    "High-Conviction 95% Pullback": check_high_conviction_95pct,
-}
 
 # ---------------------------------------------------------------------------
 # Backtest Engine
@@ -222,20 +53,6 @@ def run_3month_optimization(df_raw: pd.DataFrame, hold_days: int = 5, backtest_d
     Evaluates individual strategies and mixed strategies.
     Supports cache lookup based on ticker, hold_days, and backtest_days.
     """
-    import json
-    import os
-    import datetime
-    
-    class NumpyEncoder(json.JSONEncoder):
-        def default(self, obj):
-            if isinstance(obj, (np.int64, np.int32, np.integer)):
-                return int(obj)
-            elif isinstance(obj, (np.float64, np.float32, np.floating)):
-                return float(obj)
-            elif isinstance(obj, (pd.Timestamp, datetime.date, datetime.datetime)):
-                return obj.isoformat()
-            return super().default(obj)
-
     # 1. Cache lookup
     cache_path = None
     if ticker:
@@ -276,14 +93,14 @@ def run_3month_optimization(df_raw: pd.DataFrame, hold_days: int = 5, backtest_d
                 signals[name] = res
         day_signals[idx] = signals
         
-    # 2. Define all 39 strategies to backtest
+    # 2. Build the strategy grid: N individual + every AND/OR pair + consensus
     strategy_definitions = []
     
-    # Six individual strategies
+    # Individual strategies
     for name in CHECK_FUNCTIONS.keys():
         strategy_definitions.append({"name": name, "type": "individual", "sub_strats": [name]})
         
-    # 15 AND pairs
+    # AND pairs
     individual_names = list(CHECK_FUNCTIONS.keys())
     for s1, s2 in itertools.combinations(individual_names, 2):
         strategy_definitions.append({
@@ -292,7 +109,7 @@ def run_3month_optimization(df_raw: pd.DataFrame, hold_days: int = 5, backtest_d
             "sub_strats": [s1, s2]
         })
         
-    # 15 OR pairs
+    # OR pairs
     for s1, s2 in itertools.combinations(individual_names, 2):
         strategy_definitions.append({
             "name": f"{s1} OR {s2}",
@@ -309,9 +126,9 @@ def run_3month_optimization(df_raw: pd.DataFrame, hold_days: int = 5, backtest_d
     summary_records = []
     trade_logs = {}
     
-    for strat in strategy_definitions:
-        strat_name = strat["name"]
-        strat_type = strat["type"]
+    for strat_def in strategy_definitions:
+        strat_name = strat_def["name"]
+        strat_type = strat_def["type"]
         trades = []
         
         for idx in range(start_idx, end_idx + 1):
@@ -322,20 +139,20 @@ def run_3month_optimization(df_raw: pd.DataFrame, hold_days: int = 5, backtest_d
             day_sigs = day_signals.get(idx, {})
             
             if strat_type == "individual":
-                target_strat = strat["sub_strats"][0]
+                target_strat = strat_def["sub_strats"][0]
                 if target_strat in day_sigs:
                     triggered = True
                     trigger_details.append(day_sigs[target_strat])
             
             elif strat_type == "and":
-                s1, s2 = strat["sub_strats"]
+                s1, s2 = strat_def["sub_strats"]
                 if s1 in day_sigs and s2 in day_sigs:
                     triggered = True
                     trigger_details.append(day_sigs[s1])
                     trigger_details.append(day_sigs[s2])
                     
             elif strat_type == "or":
-                s1, s2 = strat["sub_strats"]
+                s1, s2 = strat_def["sub_strats"]
                 if s1 in day_sigs:
                     trigger_details.append(day_sigs[s1])
                 if s2 in day_sigs:
@@ -343,7 +160,7 @@ def run_3month_optimization(df_raw: pd.DataFrame, hold_days: int = 5, backtest_d
                 triggered = len(trigger_details) > 0
                 
             elif strat_type == "consensus":
-                threshold = strat["threshold"]
+                threshold = strat_def["threshold"]
                 active_sigs = list(day_sigs.values())
                 if len(active_sigs) >= threshold:
                     triggered = True

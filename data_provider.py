@@ -7,11 +7,13 @@ Data Sources:
   - NSE India JSON API : Live index values (Nifty 50 / Bank / IT / Midcap) — free
   - nsepython          : Live LTP from NSE quote endpoint — instant, free
 """
+import os
+import datetime
+import time
+
 import yfinance as yf
 import pandas as pd
 import streamlit as st
-import datetime
-import time
 import requests
 
 # ---------------------------------------------------------------------------
@@ -132,9 +134,6 @@ def get_live_ltp(symbol: str) -> float | None:
 # ---------------------------------------------------------------------------
 # Batch Historical Downloader — yfinance EOD daily (Cache-Backed Incremental)
 # ---------------------------------------------------------------------------
-import os
-import time as pytime
-
 _CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache")
 os.makedirs(_CACHE_DIR, exist_ok=True)
 
@@ -143,7 +142,7 @@ def _load_cached_ticker(ticker: str) -> pd.DataFrame | None:
     if os.path.exists(cache_path):
         try:
             # Check 30-day expiration
-            file_age_days = (pytime.time() - os.path.getmtime(cache_path)) / (60 * 60 * 24)
+            file_age_days = (time.time() - os.path.getmtime(cache_path)) / (60 * 60 * 24)
             if file_age_days > 30:
                 os.remove(cache_path)
                 return None

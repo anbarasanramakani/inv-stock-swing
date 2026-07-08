@@ -1,7 +1,6 @@
 import sys
 import os
 import pandas as pd
-import numpy as np
 
 # Add workspace to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
