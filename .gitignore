@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Runtime data caches (regenerated on demand; expire after 30 days)
+.cache/
+
+# Regression baseline artifact
+scratch/golden_baseline.json
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

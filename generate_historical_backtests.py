@@ -1,7 +1,6 @@
 import sys
 import os
 import pandas as pd
-import numpy as np
 
 # Add workspace to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -48,11 +47,11 @@ def generate_backtests():
     nifty50_syms = [s.replace(".NS", "").upper() for s in nifty50_tickers]
     
     strategies = [
-        ("EMA Pullback (20)", scr.screen_ema_pullback),
-        ("RSI Pullback/Reversal", scr.screen_rsi_pullback),
-        ("Volume Breakout", scr.screen_volume_breakout),
-        ("MACD Crossover", scr.screen_macd_crossover),
-        ("Bollinger Rebound", scr.screen_bollinger_rebound)
+        ("EMA Pullback (20)",     scr.SHORT_STRATEGIES["EMA Pullback (20)"]),
+        ("RSI Pullback/Reversal", scr.SHORT_STRATEGIES["RSI Reversal & Pullback"]),
+        ("Volume Breakout",       scr.SHORT_STRATEGIES["Volume Breakout"]),
+        ("MACD Crossover",        scr.SHORT_STRATEGIES["MACD Crossover"]),
+        ("Bollinger Rebound",     scr.SHORT_STRATEGIES["Bollinger Rebound"]),
     ]
     
     print("Analyzing daily slices for technical setups and institutional matching...")

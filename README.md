@@ -11,14 +11,23 @@ inv-stock-swing/
 ├── app.py                            # Streamlit web app layout, custom terminal styles & reactive logic
 ├── data_provider.py                  # Data fetcher: historical (yfinance) and live (nsepython + NSE JSON API)
 ├── tickers.py                        # Constituent lists (Nifty 50, 100, 500, 1000, F&O) and delisting filters
-├── screeners.py                      # Math engines for indicators (EMAs, RSI, MACD, VWAP, BB) and swing setups
+├── strategies.py                     # Single source of truth: swing setup conditions + ATR stop/target specs
+├── screeners.py                      # Indicator math (EMAs, RSI, MACD, VWAP, BB, ATR, Supertrend, ADX) + live screeners
+├── intraday_screener.py              # Intraday long/short setups (VWAP, ORB, EMA 9/21) + 10-day backtest
+├── optimizer.py                      # Multi-strategy backtester: individual + AND/OR/consensus grid
 ├── institutional.py                  # Web parser for FII net flows, MF/FPI bulk deals, and HFT exclusions
 ├── news_provider.py                  # Live Google News RSS scraper and event-driven backtesting
 ├── generate_historical_backtests.py  # Utility to compile 10-day backtest cache (Opt. & Tier-1)
 ├── generate_long_term_backtests.py   # Utility to compile 2-month backtest cache (Medium-term)
+├── STRATEGY.md                       # Research notes: strategy rationale, risk model, backtest caveats
 ├── requirements.txt                  # Python dependencies
 └── *.csv                             # Pre-compiled backtest caches used by the UI
 ```
+
+> Strategy logic (entry conditions + ATR-based stops/targets) is declared once in
+> `strategies.py` and consumed by both `screeners.py` (live) and `optimizer.py`
+> (backtest), so the two can never drift apart. See **STRATEGY.md** for the
+> research rationale and known limitations.
 
 ---
 
