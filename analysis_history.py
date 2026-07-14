@@ -170,7 +170,8 @@ def add_run_to_history(
             pick.get("Strategy", ""), source
         )
 
-        entry = {
+        entry = dict(pick)
+        entry.update({
             "Ticker": ticker,
             "Symbol": ticker.replace(".NS", ""),
             "Strategy": pick.get("Strategy", ""),
@@ -186,7 +187,7 @@ def add_run_to_history(
             "Exit Price": None,
             "P&L (%)": None,
             "Exit Date": None,
-        }
+        })
         run_entry["picks"].append(entry)
 
     cache["runs"].insert(0, run_entry)
