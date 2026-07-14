@@ -520,8 +520,6 @@ for k in _SS_KEYS:
         elif k in ["is_analyzing"]:
             st.session_state[k] = False
         elif k == "news_picks":
-            import json
-            import os
             cache_file = "news_cache.json"
             if os.path.exists(cache_file):
                 try:
@@ -534,8 +532,6 @@ for k in _SS_KEYS:
             else:
                 st.session_state[k] = pd.DataFrame()
         elif k == "brokers_picks":
-            import json
-            import os
             cache_file = "brokers_cache.json"
             if os.path.exists(cache_file):
                 try:
@@ -573,6 +569,35 @@ if st.session_state.get("initial_news_loaded") is not True:
                 existing_picks=[]
             )
             st.session_state.news_picks = pd.DataFrame(preview_items)
+
+        # ADD: Load latest full analysis run globally
+        try:
+            history_cache_path = "analysis_history_cache.json"
+            if os.path.exists(history_cache_path):
+                with open(history_cache_path, "r", encoding="utf-8") as _hf:
+                    hist_data = json.load(_hf)
+                if hist_data.get("runs") and len(hist_data["runs"]) > 0:
+                    latest_run = hist_data["runs"][0]
+                    picks = latest_run.get("picks", [])
+                    if picks:
+                        all_picks_df = pd.DataFrame(picks)
+                        
+                        swing = all_picks_df[all_picks_df["Source"] == "swing"]
+                        st.session_state.screener_results = swing if not swing.empty else pd.DataFrame()
+                        
+                        med = all_picks_df[all_picks_df["Source"] == "medium"]
+                        st.session_state.medium_term_picks = med if not med.empty else pd.DataFrame()
+                        
+                        intra_p = all_picks_df[all_picks_df["Source"] == "intraday"]
+                        st.session_state.intraday_picks = intra_p if not intra_p.empty else pd.DataFrame()
+
+                        st.session_state.screened_universe = latest_run.get("universe", "Nifty 1000")
+                        st.session_state.screened_strategy = latest_run.get("strategy", "All Strategies")
+                        st.session_state.last_run_time = "Global Cache (Loaded)"
+                        st.session_state.last_sync_time = "Global Cache (Loaded)"
+                        st.session_state.last_sync_timestamp = time.time()
+        except Exception as e:
+            print(f"Error loading global cache: {e}")
 
     except Exception as startup_err:
         print(f"[Startup News] Error: {startup_err}")
@@ -852,6 +877,16 @@ def _ensure_ticker_column(df: pd.DataFrame) -> pd.DataFrame:
         out["Ticker"] = out["Symbol"].fillna("")
     elif "Ticker" not in out.columns:
         out["Ticker"] = ""
+        
+    # Safeguard missing UI columns (especially for old cached data)
+    if not out.empty:
+        if "High_Conviction" not in out.columns:
+            out["High_Conviction"] = False
+        if "Strategy" not in out.columns:
+            out["Strategy"] = ""
+        if "Type" not in out.columns:
+            out["Type"] = "BUY"
+            
     return out
 
 
@@ -1680,6 +1715,46 @@ if st.session_state.get("is_analyzing"):
             st.session_state.last_sync_time = now_str
             st.session_state.last_sync_timestamp = time.time()
             st.toast("✅ Full Progressive Scan Completed Successfully!", icon="📈")
+            
+            # --- ADD TO GLOBAL HISTORY CACHE ---
+            try:
+                if st.session_state.get("analysis_mode") == "full":
+                    all_picks = []
+                    
+                    if st.session_state.screener_results is not None and not st.session_state.screener_results.empty:
+                        swing = st.session_state.screener_results.to_dict(orient="records")
+                        for p in swing:
+                            p["Source"] = "swing"
+                            all_picks.append(p)
+                            
+                    if st.session_state.medium_term_picks is not None and not st.session_state.medium_term_picks.empty:
+                        med = st.session_state.medium_term_picks.to_dict(orient="records")
+                        for p in med:
+                            p["Source"] = "medium"
+                            all_picks.append(p)
+                            
+                    if st.session_state.intraday_picks is not None and not st.session_state.intraday_picks.empty:
+                        intra_p = st.session_state.intraday_picks.to_dict(orient="records")
+                        for p in intra_p:
+                            p["Source"] = "intraday"
+                            all_picks.append(p)
+
+                    if st.session_state.news_picks is not None and not st.session_state.news_picks.empty:
+                        news_p = st.session_state.news_picks.to_dict(orient="records")
+                        for p in news_p:
+                            p["Source"] = "news"
+                            all_picks.append(p)
+
+                    date_str = datetime.date.today().isoformat()
+                    uni = st.session_state.screened_universe
+                    strat = st.session_state.screened_strategy
+                    
+                    cache = hist.load_history_cache()
+                    hist.add_run_to_history(cache, date_str, uni, strat, "manual_full", all_picks)
+            except Exception as hist_e:
+                print(f"Error saving to global cache: {hist_e}")
+            # -------------------------------------
+            
         st.rerun()
     elif worker_state and not worker_state.get("done"):
         # Force the page to refresh while the background analysis is still running.
@@ -2678,7 +2753,7 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                 if st.session_state.get("opt_leaderboard") is not None:
                     leader_df = st.session_state.opt_leaderboard
                     
-                    st.markdown(f"### 🏆 Universe-Wide Strategy Leaderboard")
+                    st.markdown("### 🏆 Universe-Wide Strategy Leaderboard")
                     
                     ld_display_type = st.radio(
                         "Select Leaderboard Display View",
