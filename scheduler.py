@@ -92,10 +92,6 @@ def run_full_scheduled_analysis():
     swing_results = inst.enrich_picks_with_bulk_deals(swing_results, bulk_deals)
     medium_results = inst.enrich_picks_with_bulk_deals(medium_results, bulk_deals)
     
-    # News backtest
-    cached_computed_picks = [p for p in existing_news_list if p.get("Price") and p.get("Stop Loss") and p.get("Target")]
-    news_bt = news_helper.run_news_backtest(data_cache, lookback_days=30, cached_news_items=cached_computed_picks)
-    
     # Save to analysis history
     all_picks = []
     for p in swing_results:

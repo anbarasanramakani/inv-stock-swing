@@ -17,7 +17,6 @@ Medium-term strategies (15-30 days):
   - Bollinger Band Squeeze Breakout
 """
 from collections import OrderedDict
-from typing import Optional
 
 import pandas as pd
 import numpy as np

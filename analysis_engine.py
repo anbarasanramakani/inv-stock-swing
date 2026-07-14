@@ -1,8 +1,7 @@
 import asyncio
-from typing import List, AsyncGenerator, Dict, Optional
+from typing import List, AsyncGenerator
 import data_provider as dp
 import screeners as scr
-import tickers as tick_helper
 from schemas import StockAnalysisResult, StreamProgressPayload, AnalysisStatus
 
 async def chunk_analysis_engine(

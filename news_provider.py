@@ -7,15 +7,13 @@ Fallback: Curated recent catalysts when live scraping fails.
 
 Backtest: Historical catalyst list evaluated against actual price outcomes.
 """
-from typing import List, Dict, Optional
+from typing import List, Dict
 import pandas as pd
-import numpy as np
 import datetime
 import time
 import xml.etree.ElementTree as ET
 from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 try:
     import requests
@@ -400,7 +398,7 @@ def _fetch_nse_announcements() -> list:
             if headline:
                 items.append({
                     "title": headline,
-                    "link": f"https://www.nseindia.com{cann.get('link', '')}",
+                    "link": f"https://www.nseindia.com{ann.get('link', '')}",
                     "pubDate": ann.get('date', ''),
                     "source": "NSE Announcements"
                 })
@@ -636,12 +634,7 @@ def scrape_live_all_nse_news_from_items(scraped_items: list, all_symbols: list) 
     return sort_news_items(matched_news_picks)
 
 
-def scrape_live_all_nse_news(all_symbols: list) -> list:
-    """
-    Legacy function - now uses the new multi-source fetch.
-    """
-    scraped_items = fetch_news_from_all_sources(all_symbols)
-    return scrape_live_all_nse_news_from_items(scraped_items, all_symbols)
+
 
 
 import re

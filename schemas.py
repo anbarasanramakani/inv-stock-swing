@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 from enum import Enum
-from datetime import datetime
 
 class NewsCategory(str, Enum):
     MACRO = "MACRO"

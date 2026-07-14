@@ -8,7 +8,7 @@ import os
 import datetime
 import time
 import pandas as pd
-from typing import Dict, List, Optional
+from typing import List
 
 
 HISTORY_CACHE_FILE = "analysis_history_cache.json"

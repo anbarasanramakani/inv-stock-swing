@@ -11,7 +11,6 @@ Universes:
 """
 from pathlib import Path
 from typing import Optional
-import os
 import pandas as pd
 import requests
 from io import StringIO

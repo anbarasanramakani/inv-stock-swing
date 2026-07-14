@@ -1,5 +1,4 @@
 import asyncio
-import json
 from typing import AsyncGenerator, List
 from schemas import MarketNewsItem, MarketStatusSummary
 from news_service import InitialMarketNewsService
