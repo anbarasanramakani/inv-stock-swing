@@ -102,7 +102,10 @@ def get_latest_fii_sentiment() -> tuple[Optional[float], Optional[str]]:
 
     # 1. Try NSDL FPI investment activity (primary source)
     try:
-        df = fetch_nsdl_fpi_latest_investment_activity()
+        import concurrent.futures
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(fetch_nsdl_fpi_latest_investment_activity)
+        df = future.result(timeout=5)
         if df is not None and not df.empty and 'ASSET_CLASS' in df.columns:
             equity = df[df['ASSET_CLASS'].str.upper() == 'EQUITY']
             if not equity.empty:
@@ -147,7 +150,16 @@ def get_recent_bulk_deals() -> Optional[pd.DataFrame]:
         return None
     
     try:
-        df = bulk_deal_data(period='1W')
+        import concurrent.futures
+        # Use ThreadPoolExecutor without a context manager to avoid blocking on shutdown
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(bulk_deal_data, period='1W')
+        try:
+            df = future.result(timeout=8)
+        except concurrent.futures.TimeoutError:
+            print("[FII/Bulk] NSE bulk_deal_data timed out after 8s.")
+            return None
+            
         if df is not None and not df.empty:
             df = df.copy()
             # Normalize column names (handle case variations)
