@@ -6,8 +6,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import threading
 from plotly.subplots import make_subplots
-import datetime, os
+import datetime, os, time, json
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG  (must be first Streamlit call)
@@ -487,6 +489,7 @@ import institutional as inst
 import news_provider as news_helper
 import optimizer     as opt
 import intraday_screener as intra
+import analysis_history as hist
 
 importlib.reload(tick_helper)
 importlib.reload(dp)
@@ -495,6 +498,7 @@ importlib.reload(inst)
 importlib.reload(news_helper)
 importlib.reload(opt)
 importlib.reload(intra)
+importlib.reload(hist)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Session state init
@@ -503,11 +507,18 @@ _SS_KEYS = ["screener_results", "past_signals_results", "news_picks",
             "news_past_results", "medium_term_picks", "data_cache",
             "screened_universe", "screened_strategy", "ltp_cache",
             "last_run_time", "last_sync_time", "last_sync_timestamp", "opt_leaderboard",
-            "last_news_scrape_timestamp", "intraday_picks", "intraday_backtest"]
+            "last_news_scrape_timestamp", "intraday_picks", "intraday_backtest",
+            "is_analyzing", "analysis_universe", "analysis_index",
+            "accumulated_matching", "accumulated_past_sigs", "accumulated_medium_term",
+            "accumulated_intraday_picks", "accumulated_intraday_backtest",
+            "accumulated_data_cache", "accumulated_ltp_cache", "bulk_deals_cached",
+            "brokers_picks", "initial_news_loaded"]
 for k in _SS_KEYS:
     if k not in st.session_state:
         if k in ["last_sync_timestamp", "last_news_scrape_timestamp"]:
             st.session_state[k] = 0.0
+        elif k in ["is_analyzing"]:
+            st.session_state[k] = False
         elif k == "news_picks":
             import json
             import os
@@ -522,8 +533,53 @@ for k in _SS_KEYS:
                     st.session_state[k] = pd.DataFrame()
             else:
                 st.session_state[k] = pd.DataFrame()
+        elif k == "brokers_picks":
+            import json
+            import os
+            cache_file = "brokers_cache.json"
+            if os.path.exists(cache_file):
+                try:
+                    with open(cache_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        st.session_state[k] = pd.DataFrame(data) if data else pd.DataFrame()
+                except Exception as e:
+                    print(f"Error loading brokers cache: {e}")
+                    st.session_state[k] = pd.DataFrame()
+            else:
+                st.session_state[k] = pd.DataFrame()
         else:
             st.session_state[k] = None
+
+if "_analysis_worker_state" not in st.session_state:
+    st.session_state["_analysis_worker_state"] = {}
+
+# ─── Startup: load a fast news preview first, then refresh in the background ───
+if st.session_state.get("initial_news_loaded") is not True:
+    st.session_state.initial_news_loaded = True
+    st.session_state.news_picks = pd.DataFrame()
+
+    try:
+        if os.path.exists("news_cache.json"):
+            with open("news_cache.json", "r", encoding="utf-8") as _f:
+                cached_items = json.load(_f)
+            today_str = datetime.date.today().isoformat()
+            today_items = [x for x in cached_items if x.get("Date", "") >= today_str]
+            if today_items:
+                st.session_state.news_picks = pd.DataFrame(today_items)
+
+        if st.session_state.news_picks.empty:
+            preview_items = news_helper.get_news_preview(
+                all_symbols=tick_helper.get_all_nse_tickers(),
+                existing_picks=[]
+            )
+            st.session_state.news_picks = pd.DataFrame(preview_items)
+
+    except Exception as startup_err:
+        print(f"[Startup News] Error: {startup_err}")
+        st.session_state.news_picks = pd.DataFrame()
+
+    st.rerun()
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Sidebar
@@ -567,15 +623,28 @@ with st.sidebar:
     min_price     = st.number_input("Min Price (₹)", min_value=1.0, value=20.0, step=10.0)
     min_vol_ratio = st.slider("Min Volume Ratio", 0.5, 5.0, 1.0, 0.1)
     st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
-    auto_refresh = st.checkbox("🔄 Auto-Refresh (10s)", value=True, help="Auto-sync live prices and news feeds every 10 seconds.")
+    auto_refresh = st.checkbox("🔄 Auto-Refresh (1m)", value=True, help="Auto-sync live prices and news feeds every 60 seconds.")
     st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-    run_btn = st.button("⚡  Run Full Analysis")
+    st.markdown("<div style='font-size:0.68rem;font-weight:700;color:#5a7a9a;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;'>Analysis Tasks</div>", unsafe_allow_html=True)
+    run_swing_btn = st.button("⚡ Run Swing Screener", key="run_swing_btn")
+    run_intra_btn = st.button("🏃 Run Intraday Scanner", key="run_intra_btn")
+    run_mt_btn = st.button("🚀 Run Medium-Term Scan", key="run_mt_btn")
+    run_full_btn = st.button("🔥 Run Full Combined Analysis", key="run_full_btn")
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        refresh_news_btn = st.button("📰 Quick Refresh News")
+    with col2:
+        fresh_start_btn = st.button("🧹 Fresh Start", help="Reset the scanner and start from a clean slate.")
+    with col2:
+        load_news_btn = st.button("🔄 Load Full News Coverage")
 
     st.markdown("""
     <hr style="border:none;border-top:1px solid #21262d;margin:14px 0 10px;">
     <div style="font-size:0.65rem;color:#4a5568;text-align:center;line-height:1.9;">
       Data: NSE India · yfinance<br>
-      Live Prices: NSE JSON · nsepython<br>
+      Live Prices: NSE JSON · nselib<br>
+      News: ET · Moneycontrol · Livemint · NSE · Google News RSS<br>
       Strategies: 5 Short + 2 Medium-term
     </div>
     """, unsafe_allow_html=True)
@@ -704,7 +773,7 @@ def _get_ltp_cache(tickers: list, data_cache: dict) -> dict:
             if ltp and float(ltp) > 0:
                 ltp_map[ticker] = float(ltp)
                 continue
-        except:
+        except Exception:
             pass
         failed_tickers.append(ticker)
         
@@ -721,7 +790,7 @@ def _get_ltp_cache(tickers: list, data_cache: dict) -> dict:
                             close_col = df['Close'].dropna()
                             if not close_col.empty:
                                 ltp_map[t] = float(close_col.iloc[-1])
-                        except:
+                        except Exception:
                             pass
                 else:
                     # Single ticker case
@@ -772,11 +841,403 @@ def _sec_header(icon: str, title: str, count=None, badge: str = ""):
         unsafe_allow_html=True,
     )
 
+def _ensure_ticker_column(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize pick/news DataFrames so a Ticker column always exists."""
+    if df is None:
+        return pd.DataFrame()
+    if isinstance(df, pd.Series):
+        df = df.to_frame().T
+    out = df.copy()
+    if "Ticker" not in out.columns and "Symbol" in out.columns:
+        out["Ticker"] = out["Symbol"].fillna("")
+    elif "Ticker" not in out.columns:
+        out["Ticker"] = ""
+    return out
+
+
+def _safe_df(records):
+    if not records:
+        return pd.DataFrame()
+    df_out = pd.DataFrame(records)
+    for col in df_out.columns:
+        if pd.api.types.is_object_dtype(df_out[col]) or pd.api.types.is_string_dtype(df_out[col]):
+            converted = pd.to_numeric(df_out[col], errors='coerce')
+            non_missing = df_out[col].notna()
+            if non_missing.any() and converted.notna().sum() == non_missing.sum():
+                df_out[col] = converted
+    return df_out
+
+
+_ANALYSIS_STATE_LOCK = threading.Lock()
+
+
+def _reset_analysis_worker_state():
+    with _ANALYSIS_STATE_LOCK:
+        st.session_state["_analysis_worker_state"] = {}
+
+
+def _clear_analysis_session_state():
+    _reset_analysis_worker_state()
+    st.session_state.is_analyzing = False
+    st.session_state.analysis_universe = []
+    st.session_state.analysis_index = 0
+    st.session_state.analysis_batch = 0
+    st.session_state.analysis_total_batches = 0
+    st.session_state.analysis_status = "Ready"
+    st.session_state.analysis_mode = None
+    st.session_state.screened_universe = None
+    st.session_state.screened_strategy = None
+    st.session_state.accumulated_matching = []
+    st.session_state.accumulated_past_sigs = []
+    st.session_state.accumulated_medium_term = []
+    st.session_state.accumulated_intraday_picks = []
+    st.session_state.accumulated_intraday_backtest = []
+    st.session_state.accumulated_data_cache = {}
+    st.session_state.accumulated_ltp_cache = {}
+    st.session_state.data_cache = {}
+    st.session_state.ltp_cache = {}
+    st.session_state.bulk_deals_cached = None
+    st.session_state.screener_results = pd.DataFrame()
+    st.session_state.past_signals_results = pd.DataFrame()
+    st.session_state.medium_term_picks = pd.DataFrame()
+    st.session_state.intraday_picks = pd.DataFrame()
+    st.session_state.intraday_backtest = pd.DataFrame()
+    st.session_state.news_picks = pd.DataFrame()
+    st.session_state.news_past_results = pd.DataFrame()
+    st.session_state.last_run_time = "Ready"
+    st.session_state.last_sync_time = "Ready"
+    st.session_state.last_sync_timestamp = 0.0
+    st.session_state.last_news_scrape_timestamp = 0.0
+
+
+def _get_analysis_worker_state():
+    with _ANALYSIS_STATE_LOCK:
+        return st.session_state.get("_analysis_worker_state")
+
+
+def _sync_worker_state_to_session(worker_state):
+    if not worker_state:
+        return
+
+    progress = worker_state.get("progress", {}) or {}
+    st.session_state.analysis_index = int(progress.get("processed", st.session_state.analysis_index or 0))
+    st.session_state.analysis_status = progress.get("status", "Preparing batch...")
+    st.session_state.analysis_batch = int(progress.get("batch", 0) or 0)
+    st.session_state.analysis_total_batches = int(progress.get("total_batches", 0) or 0)
+    st.session_state.accumulated_matching = list(worker_state.get("accumulated_matching", []))
+    st.session_state.accumulated_past_sigs = list(worker_state.get("accumulated_past_sigs", []))
+    st.session_state.accumulated_medium_term = list(worker_state.get("accumulated_medium_term", []))
+    st.session_state.accumulated_intraday_picks = list(worker_state.get("accumulated_intraday_picks", []))
+    st.session_state.accumulated_intraday_backtest = list(worker_state.get("accumulated_intraday_backtest", []))
+    st.session_state.accumulated_data_cache = dict(worker_state.get("data_cache", {}))
+    st.session_state.accumulated_ltp_cache = dict(worker_state.get("ltp_cache", {}))
+    st.session_state.bulk_deals_cached = worker_state.get("bulk_deals_cached")
+
+    st.session_state.screener_results = _safe_df(st.session_state.accumulated_matching)
+    st.session_state.past_signals_results = _safe_df(st.session_state.accumulated_past_sigs)
+    st.session_state.medium_term_picks = _safe_df(st.session_state.accumulated_medium_term)
+    st.session_state.intraday_picks = _safe_df(st.session_state.accumulated_intraday_picks)
+    st.session_state.intraday_backtest = _safe_df(st.session_state.accumulated_intraday_backtest)
+    st.session_state.data_cache = st.session_state.accumulated_data_cache
+    st.session_state.ltp_cache = st.session_state.accumulated_ltp_cache
+
+    news_picks = worker_state.get("news_picks")
+    if news_picks is not None:
+        st.session_state.news_picks = pd.DataFrame(news_picks) if news_picks else pd.DataFrame()
+    news_bt = worker_state.get("news_past_results")
+    if news_bt is not None:
+        st.session_state.news_past_results = pd.DataFrame(news_bt) if news_bt else pd.DataFrame()
+
+    st.session_state.last_sync_timestamp = time.time()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Universe resolver helper
+# ─────────────────────────────────────────────────────────────────────────────
+def _resolve_universe_tickers(stock_universe: str, custom_tickers: str) -> list:
+    """Resolve the selected universe to a list of tickers."""
+    if stock_universe == "Nifty 50":
+        return tick_helper.get_nifty50_tickers()
+    elif stock_universe == "Nifty 100":
+        return tick_helper.get_nifty100_tickers()
+    elif stock_universe == "F&O Stocks (Intraday)":
+        return tick_helper.get_fno_tickers()
+    elif stock_universe == "Nifty 500":
+        with st.status("Fetching Nifty 500 constituents...", expanded=False) as s:
+            raw = tick_helper.get_nifty500_tickers()
+            s.update(label=f"Nifty 500: {len(raw)} stocks", state="complete")
+            return raw
+    elif stock_universe == "Nifty 1000":
+        with st.status("Building Nifty 1000 list...", expanded=False) as s:
+            raw = tick_helper.get_nifty1000_tickers()
+            s.update(label=f"Nifty 1000: {len(raw)} stocks", state="complete")
+            return raw
+    else:
+        syms = [s.strip().upper() for s in custom_tickers.split(",") if s.strip()]
+        return [f"{s}.NS" if not s.endswith(".NS") else s for s in syms]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Background worker
+# ─────────────────────────────────────────────────────────────────────────────
+def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, state):
+    try:
+        total = len(raw)
+        total_batches = int(np.ceil(total / 10)) if total else 0
+        state["active"] = True
+        state["done"] = False
+        state["error"] = None
+        state["progress"] = {"processed": 0, "total": total, "batch": 0, "total_batches": total_batches, "status": "Preparing first batch..."}
+        state["accumulated_matching"] = []
+        state["accumulated_past_sigs"] = []
+        state["accumulated_medium_term"] = []
+        state["accumulated_intraday_picks"] = []
+        state["accumulated_intraday_backtest"] = []
+        state["data_cache"] = {}
+        state["ltp_cache"] = {}
+        state["bulk_deals_cached"] = None
+        state["news_picks"] = []
+        state["news_past_results"] = []
+        state["last_updated"] = time.time()
+
+        bulk_deals = []
+
+        for idx in range(0, total, 10):
+            chunk = raw[idx:idx + 10]
+            batch_num = idx // 10 + 1
+            state["progress"] = {
+                "processed": min(idx + 1, total),
+                "total": total,
+                "batch": batch_num,
+                "total_batches": total_batches,
+                "status": f"Scanning batch {batch_num}/{total_batches}"
+            }
+            state["last_updated"] = time.time()
+
+            chunk_data = dp.download_stock_data_batch(chunk, period="1y")
+            state["data_cache"].update(chunk_data)
+
+            if idx == 0 or state["bulk_deals_cached"] is None:
+                try:
+                    state["bulk_deals_cached"] = inst.get_recent_bulk_deals()
+                except Exception as bd_err:
+                    print(f"Bulk deals fetch failed: {bd_err}")
+                    state["bulk_deals_cached"] = []
+            bulk_deals = state["bulk_deals_cached"]
+
+            matching, past_sigs, medium_term = [], [], []
+            intraday_picks, intraday_backtest = [], []
+            for ticker, df in chunk_data.items():
+                try:
+                    if float(df['Close'].iloc[-1]) < min_price:
+                        continue
+                    res = scr.run_screener_on_data(ticker, df, strategy)
+                    if res and float(res.get('Vol_Ratio', 0)) >= min_vol_ratio:
+                        matching.append(res)
+                    past_sigs.extend(scr.track_past_signals(ticker, df, strategy))
+                    mt = scr.run_medium_term_screener(ticker, df)
+                    if mt:
+                        medium_term.append(mt)
+                    intra_res = intra.run_intraday_screener(ticker, df)
+                    if intra_res:
+                        intraday_picks.extend(intra_res)
+                    intraday_backtest.extend(intra.backtest_intraday_10days(ticker, df))
+                except Exception:
+                    continue
+
+            try:
+                matching = inst.enrich_picks_with_bulk_deals(matching, bulk_deals)
+                medium_term = inst.enrich_picks_with_bulk_deals(medium_term, bulk_deals)
+            except Exception as enrich_err:
+                print(f"[Batch {batch_num}] Enrichment failed: {enrich_err}")
+
+            state["accumulated_matching"].extend(matching)
+            state["accumulated_past_sigs"].extend(past_sigs)
+            state["accumulated_medium_term"].extend(medium_term)
+            state["accumulated_intraday_picks"].extend(intraday_picks)
+            state["accumulated_intraday_backtest"].extend(intraday_backtest)
+
+            try:
+                new_pick_tickers = list({
+                    r.get("Ticker", "") for r in matching + medium_term + intraday_picks
+                    if r.get("Ticker", "")
+                })
+                if new_pick_tickers:
+                    batch_ltps = _get_ltp_cache(new_pick_tickers, chunk_data)
+                    state["ltp_cache"].update(batch_ltps)
+            except Exception as ltp_err:
+                print(f"[Batch {batch_num}] LTP fetch failed: {ltp_err}")
+
+            state["progress"] = {
+                "processed": min(idx + len(chunk), total),
+                "total": total,
+                "batch": batch_num,
+                "total_batches": total_batches,
+                "status": f"Batch {batch_num}/{total_batches} completed"
+            }
+            state["last_updated"] = time.time()
+
+        all_nse_symbols = tick_helper.get_all_nse_tickers()
+        import json
+        import os
+        existing_news_list = []
+        if os.path.exists("news_cache.json"):
+            try:
+                with open("news_cache.json", "r", encoding="utf-8") as f:
+                    existing_news_list = json.load(f)
+            except Exception:
+                pass
+        news_picks = news_helper.get_today_news_recommendations(state["data_cache"], all_symbols=all_nse_symbols, existing_picks=existing_news_list)
+        # Pass previously computed news picks (from cache) to the backtest so it can backtest
+        # BOTH hardcoded historical events AND actual previously-computed trade recommendations
+        cached_computed_picks = [p for p in existing_news_list if p.get("Price") and p.get("Stop Loss") and p.get("Target")]
+        news_bt = news_helper.run_news_backtest(state["data_cache"], lookback_days=30, cached_news_items=cached_computed_picks)
+        state["news_picks"] = news_picks or []
+        state["news_past_results"] = news_bt or []
+
+        # Fetch broker picks and persist 30-day cache
+        try:
+            try:
+                broker_calls = news_helper.fetch_broker_calls(all_symbols=all_nse_symbols, max_items=60)
+            except Exception:
+                broker_calls = []
+            state["brokers_picks"] = broker_calls or []
+            # Persist merged broker cache and prune to 30 days
+            try:
+                existing_map = {}
+                if os.path.exists("brokers_cache.json"):
+                    try:
+                        with open("brokers_cache.json", "r", encoding="utf-8") as _f:
+                            for _item in json.load(_f):
+                                existing_map[_item.get("Headline", "")] = _item
+                    except Exception:
+                        existing_map = {}
+                for _p in state["brokers_picks"]:
+                    existing_map[_p.get("Headline", "")] = _p
+                merged_all = list(existing_map.values())
+                # prune via provider utility if available
+                try:
+                    merged_all = news_helper.prune_cache_by_days(merged_all, days=30, date_key='Date')
+                except Exception:
+                    pass
+                with open("brokers_cache.json", "w", encoding="utf-8") as _f:
+                    json.dump(merged_all, _f, indent=2, ensure_ascii=False)
+            except Exception as _bcerr:
+                print(f"Error persisting brokers cache: {_bcerr}")
+        except Exception:
+            pass
+
+        # Persist merged news cache so future runs reuse previous results (preserve entire history)
+        try:
+            existing_map = {}
+            if os.path.exists("news_cache.json"):
+                try:
+                    with open("news_cache.json", "r", encoding="utf-8") as _f:
+                        for _item in json.load(_f):
+                            existing_map[_item.get("Headline", "")] = _item
+                except Exception:
+                    existing_map = {}
+            for _p in state["news_picks"]:
+                existing_map[_p.get("Headline", "")] = _p
+            merged_all = list(existing_map.values())
+            with open("news_cache.json", "w", encoding="utf-8") as _f:
+                json.dump(merged_all, _f, indent=2, ensure_ascii=False)
+        except Exception as _cache_err:
+            print(f"Error persisting news cache after background analysis: {_cache_err}")
+
+        # Save analysis history for persistence and validation
+        try:
+            import analysis_history as hist
+            history_cache = hist.load_history_cache()
+            
+            # Collect all picks from this run
+            all_picks = []
+            for pick in state.get("accumulated_matching", []):
+                p = dict(pick)
+                p["Source"] = "swing"
+                all_picks.append(p)
+            for pick in state.get("accumulated_medium_term", []):
+                p = dict(pick)
+                p["Source"] = "medium"
+                all_picks.append(p)
+            for pick in state.get("accumulated_intraday_picks", []):
+                p = dict(pick)
+                p["Source"] = "intraday"
+                all_picks.append(p)
+            for pick in state.get("news_picks", []):
+                p = dict(pick)
+                p["Source"] = "news"
+                all_picks.append(p)
+            
+            # Validate previous picks and add this run to history
+            hist.add_run_to_history(
+                history_cache,
+                date_str=datetime.date.today().isoformat(),
+                universe=state.get("universe", ""),
+                strategy=state.get("strategy", ""),
+                mode="full",
+                pick_list=all_picks,
+            )
+            
+            # Validate broker calls against current prices
+            current_price_map = {}
+            for pick in all_picks:
+                ticker = pick.get("Ticker") or pick.get("Symbol") or ""
+                price = pick.get("Price")
+                if ticker and price:
+                    current_price_map[ticker] = float(price)
+            hist.validate_broker_calls(history_cache, current_price_map)
+        except Exception as he:
+            print(f"Error saving analysis history: {he}")
+
+        state["done"] = True
+        state["active"] = False
+        state["progress"] = {"processed": total, "total": total, "batch": total_batches, "total_batches": total_batches, "status": "Finalizing results..."}
+        state["last_updated"] = time.time()
+    except Exception as exc:
+        state["done"] = True
+        state["active"] = False
+        state["error"] = str(exc)
+        state["last_updated"] = time.time()
+
+
+def _start_background_analysis(raw, strategy, min_price, min_vol_ratio, mode="full"):
+    _reset_analysis_worker_state()
+    state = {
+        "active": True,
+        "done": False,
+        "error": None,
+        "mode": mode,
+        "progress": {"processed": 0, "total": len(raw), "batch": 0, "total_batches": int(np.ceil(len(raw) / 10)) if raw else 0},
+        "accumulated_matching": [],
+        "accumulated_past_sigs": [],
+        "accumulated_medium_term": [],
+        "accumulated_intraday_picks": [],
+        "accumulated_intraday_backtest": [],
+        "data_cache": {},
+        "ltp_cache": {},
+        "bulk_deals_cached": None,
+        "news_picks": [],
+        "news_past_results": [],
+        "last_updated": time.time(),
+    }
+    with _ANALYSIS_STATE_LOCK:
+        st.session_state["_analysis_worker_state"] = state
+    thread = threading.Thread(
+        target=_run_background_analysis_worker,
+        args=(raw, strategy, min_price, min_vol_ratio, state),
+        daemon=True,
+    )
+    thread.start()
+    return state, thread
+
+
 def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
     """
     Renders stock pick cards in a 3-column grid.
     ltp_map: pre-fetched dict {ticker -> ltp_float}
     """
+    df = _ensure_ticker_column(df)
     if df is None or df.empty:
         st.markdown('<div class="infobox">No picks for this section today.</div>',
                     unsafe_allow_html=True)
@@ -789,7 +1250,9 @@ def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
         cols  = st.columns(len(chunk))
         for col, row in zip(cols, chunk):
             ticker  = row.get("Ticker", "")
-            symbol  = ticker.replace(".NS", "")
+            symbol  = ticker.replace(".NS", "") if isinstance(ticker, str) and ticker else ""
+            if not symbol:
+                symbol = row.get("Symbol", "") or "MARKET"
             strat   = row.get("Strategy", "—")
             sl      = row.get("Stop Loss", "")
             tgt     = row.get("Target", "")
@@ -797,7 +1260,8 @@ def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
             rsi_v   = row.get("RSI", None)
             vol_r   = row.get("Vol_Ratio", None)
             prev    = float(row.get("Price", 0) or 0)
-            ltp     = ltp_map.get(ticker, prev) or prev
+            show_price = bool(ticker) and prev > 0
+            ltp     = ltp_map.get(ticker, prev) or prev if show_price else prev
             bar_col = _STRATEGY_COLORS.get(strat, "#1f6feb")
 
             chg_pct   = ((ltp - prev) / prev * 100) if prev else 0.0
@@ -824,7 +1288,9 @@ def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
                 extra = '<span class="pill pill-inst">💎 Institutional</span>'
             elif card_type == "news":
                 cat = row.get("Catalyst", "News")
-                extra = f'<span class="pill pill-news">📰 {cat}</span>'
+                scope = row.get("Scope", "Stock")
+                scope_badge = "🌍 Market-wide" if scope == "Market" else "📰 Stock catalyst"
+                extra = f'<span class="pill pill-news">{scope_badge}</span><span class="pill pill-news">📰 {cat}</span>'
 
             with col:
                 st.markdown(f"""
@@ -836,8 +1302,8 @@ def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
                       <div class="card-strategy">{strat}</div>
                     </div>
                     <div style="text-align:right;">
-                      <div class="card-price" style="color:{ltp_color};">₹{ltp:,.2f}</div>
-                      <div class="card-change" style="color:{ltp_color};">{arrow} {abs(chg_pct):.2f}%</div>
+                      <div class="card-price" style="color:{ltp_color};">{f'₹{ltp:,.2f}' if show_price else 'Market-wide'}</div>
+                      <div class="card-change" style="color:{ltp_color};">{f'{arrow} {abs(chg_pct):.2f}%' if show_price else 'Macro / sector impact'}</div>
                     </div>
                   </div>
                   <div>{pills}{extra}</div>
@@ -861,6 +1327,10 @@ def _bt_table(df_bt, extra_cols=None):
         return
     d = df_bt.sort_values("Trigger Date", ascending=False).copy()
     d["Outcome"] = d.apply(_highlight_status, axis=1)
+    # Coerce numeric columns to prevent PyArrow serialization ArrowTypeError on mixed types
+    for numeric_col in ["Entry Price", "Target", "Stop Loss", "Current/Exit", "Days Held"]:
+        if numeric_col in d.columns:
+            d[numeric_col] = pd.to_numeric(d[numeric_col], errors='coerce')
     base = ["Trigger Date", "Ticker", "Strategy", "Entry Price",
             "Target", "Stop Loss", "Current/Exit", "Days Held", "Outcome"]
     cols = [c for c in base + (extra_cols or []) if c in d.columns]
@@ -897,159 +1367,348 @@ def _bt_stats(df_bt):
 # ─────────────────────────────────────────────────────────────────────────────
 # Run Analysis Logic
 # ─────────────────────────────────────────────────────────────────────────────
-if run_btn:
-    # 1. Resolve tickers
-    if stock_universe == "Nifty 50":
-        raw = tick_helper.get_nifty50_tickers()
-    elif stock_universe == "Nifty 100":
-        raw = tick_helper.get_nifty100_tickers()
-    elif stock_universe == "F&O Stocks (Intraday)":
-        raw = tick_helper.get_fno_tickers()
-    elif stock_universe == "Nifty 500":
-        with st.status("Fetching Nifty 500…", expanded=False) as s:
-            raw = tick_helper.get_nifty500_tickers()
-            s.update(label=f"Nifty 500: {len(raw)} stocks", state="complete")
-    elif stock_universe == "Nifty 1000":
-        with st.status("Building Nifty 1000…", expanded=False) as s:
-            raw = tick_helper.get_nifty1000_tickers()
-            s.update(label=f"Nifty 1000: {len(raw)} stocks", state="complete")
-    else:
-        syms = [s.strip().upper() for s in custom_tickers.split(",") if s.strip()]
-        raw  = [f"{s}.NS" if not s.endswith(".NS") else s for s in syms]
+if fresh_start_btn:
+    _clear_analysis_session_state()
+    # Clear all history and cache files for a truly fresh start
+    try:
+        hist.clear_history_cache()
+    except Exception:
+        pass
+    st.toast("🧹 Fresh start: all caches cleared. Starting from clean slate.", icon="✅")
+    st.rerun()
 
-    # Always include news pick symbols
-    live_news_list = news_helper.get_live_news_picks()
-    for sym in ([n["Symbol"] for n in live_news_list] +
-                [n["Symbol"] for n in news_helper.HISTORICAL_NEWS_CATALYSTS]):
-        if sym not in raw:
-            raw.append(sym)
+if refresh_news_btn:
+    st.session_state.is_analyzing = False
+    try:
+        all_nse_symbols = tick_helper.get_all_nse_tickers()
+        preview_items = news_helper.get_news_preview(all_symbols=all_nse_symbols, existing_picks=[])
+        st.session_state.news_picks = pd.DataFrame(preview_items)
+        st.toast("📰 News preview refreshed", icon="📰")
+        st.rerun()
+    except Exception as refresh_err:
+        print(f"News refresh error: {refresh_err}")
+        st.toast("⚠️ News refresh failed", icon="⚠️")
 
-    # 2. Download data in chunks
-    all_data  = {}
-    n_chunks  = int(np.ceil(len(raw) / 100))
-    prog      = st.progress(0, text=f"Downloading data for {len(raw)} stocks…")
-    for i in range(n_chunks):
-        chunk = raw[i*100:(i+1)*100]
-        all_data.update(dp.download_stock_data_batch(chunk, period="1y"))
-        prog.progress((i+1)/n_chunks,
-                      text=f"Downloaded {min((i+1)*100, len(raw))}/{len(raw)} stocks…")
-    prog.empty()
-    st.toast(f"✅ {len(all_data)}/{len(raw)} stocks ready", icon="📊")
-
-    # 3. Bulk deals
-    with st.spinner("Loading bulk deal data…"):
-        bulk_deals = inst.get_recent_bulk_deals()
-
-    # 4. Run screeners
-    with st.spinner("Scanning for trade setups…"):
-        matching, past_sigs, medium_term = [], [], []
-        intraday_picks, intraday_backtest = [], []
-        for ticker, df in all_data.items():
-            try:
-                if float(df['Close'].iloc[-1]) < min_price:
-                    continue
-                res = scr.run_screener_on_data(ticker, df, selected_strategy)
-                if res and float(res.get('Vol_Ratio', 0)) >= min_vol_ratio:
-                    matching.append(res)
-                past_sigs.extend(scr.track_past_signals(ticker, df, selected_strategy))
-                mt = scr.run_medium_term_screener(ticker, df)
-                if mt:
-                    medium_term.append(mt)
+if load_news_btn:
+    st.session_state.is_analyzing = False
+    try:
+        with st.status("🔄 Loading full news coverage from multiple sources...", expanded=True) as status:
+            status.write("📡 Fetching from Economic Times, Moneycontrol, Livemint, NSE & Google News RSS...")
+            
+            all_nse_symbols = tick_helper.get_all_nse_tickers()
+            
+            # Fetch from ALL sources concurrently
+            scraped_items = news_helper.fetch_news_from_all_sources(all_symbols=all_nse_symbols, max_items=50)
+            
+            status.write(f"✅ Fetched {len(scraped_items)} raw news items from all sources")
+            status.write("🔍 Matching tickers and categorizing catalysts...")
+            
+            # Process and categorize
+            processed_news = news_helper.scrape_live_all_nse_news_from_items(scraped_items, all_nse_symbols)
+            
+            status.write(f"📊 Processed {len(processed_news)} news picks with ticker matches")
+            
+            # ── NEW: Compute ATR-based trade recommendations for ticker-matched items ──
+            status.write("💰 Computing swing trade levels (Price/SL/Target) for ticker-matched news...")
+            
+            # We need to get the data_cache. Download data on-the-fly for any news tickers
+            news_tickers = list(set(
+                n.get("Symbol") or n.get("Ticker") or "" for n in processed_news
+                if n.get("Symbol") or n.get("Ticker")
+            ))
+            
+            data_cache_for_news = {}
+            if news_tickers:
+                import data_provider as dp
+                # Try loading from existing session data_cache first
+                if st.session_state.data_cache:
+                    for t in news_tickers:
+                        if t in st.session_state.data_cache:
+                            data_cache_for_news[t] = st.session_state.data_cache[t]
                 
-                # Scan for intraday signals & run 10-day backtest
-                intra_res = intra.run_intraday_screener(ticker, df)
-                if intra_res:
-                    intraday_picks.extend(intra_res)
-                intraday_backtest.extend(intra.backtest_intraday_10days(ticker, df))
-            except Exception:
-                continue
+                # Fetch any missing tickers
+                missing_tickers = [t for t in news_tickers if t not in data_cache_for_news]
+                if missing_tickers:
+                    try:
+                        batch_data = dp.download_stock_data_batch(missing_tickers, period="1y")
+                        data_cache_for_news.update(batch_data)
+                    except Exception as batch_err:
+                        print(f"Error fetching batch data for news: {batch_err}")
+            
+            # Load existing picks from cache for delta computation
+            import json, os
+            existing_news_list = []
+            if os.path.exists("news_cache.json"):
+                try:
+                    with open("news_cache.json", "r", encoding="utf-8") as f:
+                        existing_news_list = json.load(f)
+                except Exception:
+                    pass
+            
+            # Compute full recommendations with trade levels
+            news_with_recs = news_helper.get_today_news_recommendations(
+                data_cache_for_news,
+                all_symbols=all_nse_symbols,
+                existing_picks=existing_news_list
+            )
+            
+            status.write(f"✅ Computed trade levels for {len(news_with_recs)} news items")
+            
+            # Update session state with full recommendations (has Price/SL/Target/Type)
+            st.session_state.news_picks = pd.DataFrame(news_with_recs) if news_with_recs else pd.DataFrame()
+            
+            # Save to cache (merge with full recommendation data)
+            try:
+                existing_map = {}
+                if os.path.exists("news_cache.json"):
+                    with open("news_cache.json", "r", encoding="utf-8") as _f:
+                        for _item in json.load(_f):
+                            existing_map[_item.get("Headline", "")] = _item
+                
+                for _p in news_with_recs:
+                    existing_map[_p.get("Headline", "")] = _p
+                
+                merged = list(existing_map.values())
+                try:
+                    merged = news_helper.prune_cache_by_days(merged, days=30, date_key='Date')
+                except Exception:
+                    pass
+                with open("news_cache.json", "w", encoding="utf-8") as _f:
+                    json.dump(merged, _f, indent=2, ensure_ascii=False)
+            except Exception as cache_err:
+                print(f"Cache save error: {cache_err}")
+            
+            status.update(label=f"✅ Loaded {len(news_with_recs)} news items with trade recommendations", state="complete", expanded=False)
+        
+        st.toast(f"📰 Loaded {len(news_with_recs)} news items with trade levels", icon="📰")
+        st.rerun()
+    except Exception as load_err:
+        print(f"Full news load error: {load_err}")
+        st.toast("⚠️ Full news load failed - check console", icon="⚠️")
 
-    matching    = inst.enrich_picks_with_bulk_deals(matching,    bulk_deals)
-    medium_term = inst.enrich_picks_with_bulk_deals(medium_term, bulk_deals)
-    all_nse_symbols = tick_helper.get_all_nse_tickers()
-    import json
-    import os
-    existing_news_list = []
-    if os.path.exists("news_cache.json"):
+if run_swing_btn:
+    st.session_state.is_analyzing = False
+    try:
+        raw = _resolve_universe_tickers(stock_universe, custom_tickers)
+        if not raw:
+            st.error("No tickers resolved. Please check your selection.")
+            st.stop()
+        
+        # Force include news pick symbols
         try:
-            with open("news_cache.json", "r", encoding="utf-8") as f:
-                existing_news_list = json.load(f)
+            live_news_list = news_helper.get_live_news_picks()
+            for sym in ([n["Symbol"] for n in live_news_list] +
+                        [n["Symbol"] for n in news_helper.HISTORICAL_NEWS_CATALYSTS]):
+                if sym and sym not in raw:
+                    raw.append(sym)
         except Exception:
             pass
-    news_picks  = news_helper.get_today_news_recommendations(all_data, all_symbols=all_nse_symbols, existing_picks=existing_news_list)
-    news_bt     = news_helper.run_news_backtest(all_data)
-
-    # 5. Batch-fetch LTP for all screened tickers
-    all_pick_tickers = list({
-        r.get("Ticker","") for r in matching + medium_term + news_picks + intraday_picks
-        if r.get("Ticker","")
-    })
-    with st.spinner(f"Fetching live prices for {len(all_pick_tickers)} stocks…"):
-        ltp_cache = _get_ltp_cache(all_pick_tickers, all_data)
-
-    # 6. Store in session state
-    st.session_state.screener_results     = pd.DataFrame(matching)    if matching    else pd.DataFrame()
-    st.session_state.past_signals_results = pd.DataFrame(past_sigs)   if past_sigs   else pd.DataFrame()
-    st.session_state.news_picks           = pd.DataFrame(news_picks)  if news_picks  else pd.DataFrame()
-    
-    # Save news picks to local cache (MERGE with existing to preserve old items)
-    import json
-    try:
-        existing_map = {}
-        if os.path.exists("news_cache.json"):
-            with open("news_cache.json", "r", encoding="utf-8") as f:
-                for item in json.load(f):
-                    existing_map[item.get("Headline", "")] = item
-        # Merge: new picks override old by headline key; purge items older than 24h
-        today_str = datetime.date.today().isoformat()
-        for p in news_picks:
-            existing_map[p.get("Headline", "")] = p
-        merged = [v for v in existing_map.values() if v.get("Date", today_str) >= today_str]
-        with open("news_cache.json", "w", encoding="utf-8") as f:
-            json.dump(merged, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        print(f"Error saving news to local cache: {e}")
         
-    st.session_state.news_past_results    = pd.DataFrame(news_bt)     if news_bt     else pd.DataFrame()
-    st.session_state.medium_term_picks    = pd.DataFrame(medium_term) if medium_term else pd.DataFrame()
-    st.session_state.intraday_picks       = pd.DataFrame(intraday_picks) if intraday_picks else pd.DataFrame()
-    st.session_state.intraday_backtest    = pd.DataFrame(intraday_backtest) if intraday_backtest else pd.DataFrame()
-    st.session_state.data_cache           = all_data
-    st.session_state.ltp_cache            = ltp_cache
-    st.session_state.screened_universe    = stock_universe
-    st.session_state.screened_strategy    = selected_strategy
-    
-    # Save timestamps for system monitoring
-    import time
-    now_str = datetime.datetime.now().strftime("%H:%M:%S")
-    st.session_state.last_run_time = now_str
-    st.session_state.last_sync_time = now_str
-    st.session_state.last_sync_timestamp = time.time()
-    
-    st.rerun()
+        st.session_state.is_analyzing = True
+        st.session_state.analysis_universe = raw
+        st.session_state.analysis_mode = "swing"
+        st.session_state.analysis_index = 0
+        st.session_state.accumulated_matching = []
+        st.session_state.accumulated_past_sigs = []
+        st.session_state.accumulated_medium_term = []
+        st.session_state.accumulated_intraday_picks = []
+        st.session_state.accumulated_intraday_backtest = []
+        st.session_state.accumulated_data_cache = {}
+        st.session_state.accumulated_ltp_cache = {}
+        st.session_state.bulk_deals_cached = None
+        st.session_state.screener_results = pd.DataFrame()
+        st.session_state.past_signals_results = pd.DataFrame()
+        st.session_state.medium_term_picks = pd.DataFrame()
+        st.session_state.intraday_picks = pd.DataFrame()
+        st.session_state.intraday_backtest = pd.DataFrame()
+        st.session_state.screened_universe = stock_universe
+        st.session_state.screened_strategy = selected_strategy
+        st.session_state.last_run_time = "Starting..."
+        st.session_state.last_sync_time = "Starting..."
+        st.session_state.last_sync_timestamp = time.time()
+        
+        _start_background_analysis(raw, selected_strategy, min_price, min_vol_ratio, mode="swing")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Swing scan failed: {e}")
+        st.session_state.is_analyzing = False
+
+if run_intra_btn:
+    st.session_state.is_analyzing = False
+    try:
+        raw = _resolve_universe_tickers(stock_universe, custom_tickers)
+        if not raw:
+            st.error("No tickers resolved. Please check your selection.")
+            st.stop()
+        
+        st.session_state.is_analyzing = True
+        st.session_state.analysis_universe = raw
+        st.session_state.analysis_mode = "intraday"
+        st.session_state.analysis_index = 0
+        st.session_state.accumulated_matching = []
+        st.session_state.accumulated_past_sigs = []
+        st.session_state.accumulated_medium_term = []
+        st.session_state.accumulated_intraday_picks = []
+        st.session_state.accumulated_intraday_backtest = []
+        st.session_state.accumulated_data_cache = {}
+        st.session_state.accumulated_ltp_cache = {}
+        st.session_state.bulk_deals_cached = None
+        st.session_state.screener_results = pd.DataFrame()
+        st.session_state.past_signals_results = pd.DataFrame()
+        st.session_state.medium_term_picks = pd.DataFrame()
+        st.session_state.intraday_picks = pd.DataFrame()
+        st.session_state.intraday_backtest = pd.DataFrame()
+        st.session_state.screened_universe = stock_universe
+        st.session_state.screened_strategy = selected_strategy
+        st.session_state.last_run_time = "Starting..."
+        st.session_state.last_sync_time = "Starting..."
+        st.session_state.last_sync_timestamp = time.time()
+        
+        _start_background_analysis(raw, selected_strategy, min_price, min_vol_ratio, mode="intraday")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Intraday scan failed: {e}")
+        st.session_state.is_analyzing = False
+
+if run_mt_btn:
+    st.session_state.is_analyzing = False
+    try:
+        raw = _resolve_universe_tickers(stock_universe, custom_tickers)
+        if not raw:
+            st.error("No tickers resolved. Please check your selection.")
+            st.stop()
+        
+        st.session_state.is_analyzing = True
+        st.session_state.analysis_universe = raw
+        st.session_state.analysis_mode = "medium"
+        st.session_state.analysis_index = 0
+        st.session_state.accumulated_matching = []
+        st.session_state.accumulated_past_sigs = []
+        st.session_state.accumulated_medium_term = []
+        st.session_state.accumulated_intraday_picks = []
+        st.session_state.accumulated_intraday_backtest = []
+        st.session_state.accumulated_data_cache = {}
+        st.session_state.accumulated_ltp_cache = {}
+        st.session_state.bulk_deals_cached = None
+        st.session_state.screener_results = pd.DataFrame()
+        st.session_state.past_signals_results = pd.DataFrame()
+        st.session_state.medium_term_picks = pd.DataFrame()
+        st.session_state.intraday_picks = pd.DataFrame()
+        st.session_state.intraday_backtest = pd.DataFrame()
+        st.session_state.screened_universe = stock_universe
+        st.session_state.screened_strategy = selected_strategy
+        st.session_state.last_run_time = "Starting..."
+        st.session_state.last_sync_time = "Starting..."
+        st.session_state.last_sync_timestamp = time.time()
+        
+        _start_background_analysis(raw, selected_strategy, min_price, min_vol_ratio, mode="medium")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Medium-term scan failed: {e}")
+        st.session_state.is_analyzing = False
+
+if run_full_btn:
+    st.session_state.is_analyzing = False
+    try:
+        raw = _resolve_universe_tickers(stock_universe, custom_tickers)
+        if not raw:
+            st.error("No tickers resolved. Please check your selection.")
+            st.stop()
+        
+        # Force include news pick symbols
+        try:
+            live_news_list = news_helper.get_live_news_picks()
+            for sym in ([n["Symbol"] for n in live_news_list] +
+                        [n["Symbol"] for n in news_helper.HISTORICAL_NEWS_CATALYSTS]):
+                if sym and sym not in raw:
+                    raw.append(sym)
+        except Exception:
+            pass
+        
+        st.session_state.is_analyzing = True
+        st.session_state.analysis_universe = raw
+        st.session_state.analysis_mode = "full"
+        st.session_state.analysis_index = 0
+        st.session_state.accumulated_matching = []
+        st.session_state.accumulated_past_sigs = []
+        st.session_state.accumulated_medium_term = []
+        st.session_state.accumulated_intraday_picks = []
+        st.session_state.accumulated_intraday_backtest = []
+        st.session_state.accumulated_data_cache = {}
+        st.session_state.accumulated_ltp_cache = {}
+        st.session_state.bulk_deals_cached = None
+        st.session_state.screener_results = pd.DataFrame()
+        st.session_state.past_signals_results = pd.DataFrame()
+        st.session_state.medium_term_picks = pd.DataFrame()
+        st.session_state.intraday_picks = pd.DataFrame()
+        st.session_state.intraday_backtest = pd.DataFrame()
+        st.session_state.screened_universe = stock_universe
+        st.session_state.screened_strategy = selected_strategy
+        st.session_state.last_run_time = "Starting..."
+        st.session_state.last_sync_time = "Starting..."
+        st.session_state.last_sync_timestamp = time.time()
+        
+        _start_background_analysis(raw, selected_strategy, min_price, min_vol_ratio, mode="full")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Full analysis failed: {e}")
+        st.session_state.is_analyzing = False
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Progressive Analysis Runner Block
+# ─────────────────────────────────────────────────────────────────────────────
+if st.session_state.get("is_analyzing"):
+    worker_state = _get_analysis_worker_state()
+    if worker_state:
+        _sync_worker_state_to_session(worker_state)
+        st.session_state.analysis_last_refresh_ts = time.time()
+    else:
+        # Ensure progress shows 0 if worker state not yet available
+        if st.session_state.get("analysis_index") is None:
+            st.session_state.analysis_index = 0
+
+    now = time.time()
+    last_refresh = st.session_state.get("analysis_last_refresh_ts", 0.0)
+
+    if worker_state and worker_state.get("done"):
+        st.session_state.is_analyzing = False
+        if worker_state.get("error"):
+            st.toast(f"⚠️ Scan stopped: {worker_state['error']}", icon="⚠️")
+        else:
+            now_str = datetime.datetime.now().strftime("%H:%M:%S")
+            st.session_state.last_run_time = now_str
+            st.session_state.last_sync_time = now_str
+            st.session_state.last_sync_timestamp = time.time()
+            st.toast("✅ Full Progressive Scan Completed Successfully!", icon="📈")
+        st.rerun()
+    elif worker_state and not worker_state.get("done"):
+        # Force the page to refresh while the background analysis is still running.
+        # This keeps the batch progress display updated even if auto-refresh JS is blocked.
+        if now - last_refresh >= 0.5:
+            st.rerun()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN CONTENT — only rendered after at least one run
 # ─────────────────────────────────────────────────────────────────────────────
-if st.session_state.screener_results is not None:
+if st.session_state.screener_results is not None or st.session_state.news_picks is not None:
 
     # ── FAST LIVE SYNC (Background) ──
-    import time
     current_time = time.time()
     
-    if auto_refresh and (current_time - st.session_state.last_sync_timestamp >= 9.0):
+    if auto_refresh and (current_time - st.session_state.last_sync_timestamp >= 60.0):
         # We perform a fast update
         # 1. Gather all active tickers across picks
         active_tickers = set()
-        if not st.session_state.screener_results.empty:
-            active_tickers.update(st.session_state.screener_results["Ticker"].tolist())
-        if st.session_state.medium_term_picks is not None and not st.session_state.medium_term_picks.empty:
-            active_tickers.update(st.session_state.medium_term_picks["Ticker"].tolist())
-        if st.session_state.news_picks is not None and not st.session_state.news_picks.empty:
-            active_tickers.update(st.session_state.news_picks["Ticker"].tolist())
-        if st.session_state.intraday_picks is not None and not st.session_state.intraday_picks.empty:
-            active_tickers.update(st.session_state.intraday_picks["Ticker"].tolist())
+        for frame in [
+            st.session_state.screener_results,
+            st.session_state.medium_term_picks,
+            st.session_state.news_picks,
+            st.session_state.intraday_picks,
+        ]:
+            normalized = _ensure_ticker_column(frame)
+            if normalized is not None and not normalized.empty:
+                active_tickers.update([str(v).strip() for v in normalized["Ticker"].tolist() if str(v).strip()])
             
         active_tickers = list(active_tickers)
         
@@ -1061,11 +1720,9 @@ if st.session_state.screener_results is not None:
             st.session_state.ltp_cache.update(updated_ltp)
             
         # 3. Update news catalysts recommendations (Throttled to 20 seconds and written to local cache)
-        if st.session_state.data_cache and (current_time - st.session_state.last_news_scrape_timestamp >= 20.0):
+        if st.session_state.data_cache and (current_time - st.session_state.last_news_scrape_timestamp >= 60.0):
             try:
                 all_nse_symbols = tick_helper.get_all_nse_tickers()
-                import json
-                import os
                 existing_news_list = []
                 if os.path.exists("news_cache.json"):
                     try:
@@ -1077,17 +1734,20 @@ if st.session_state.screener_results is not None:
                 st.session_state.news_picks = pd.DataFrame(latest_news) if latest_news else pd.DataFrame()
                 
                 # Save background news (MERGE to preserve earlier news from the day)
-                import json
                 try:
                     existing_map = {}
                     if os.path.exists("news_cache.json"):
                         with open("news_cache.json", "r", encoding="utf-8") as _f:
                             for _item in json.load(_f):
                                 existing_map[_item.get("Headline", "")] = _item
-                    today_str = datetime.date.today().isoformat()
                     for _p in latest_news:
                         existing_map[_p.get("Headline", "")] = _p
-                    merged = [v for v in existing_map.values() if v.get("Date", today_str) >= today_str]
+                    # Preserve full history when saving background updates
+                    merged = list(existing_map.values())
+                    try:
+                        merged = news_helper.prune_cache_by_days(merged, days=30, date_key='Date')
+                    except Exception:
+                        pass
                     with open("news_cache.json", "w", encoding="utf-8") as _f:
                         json.dump(merged, _f, indent=2, ensure_ascii=False)
                 except Exception as e:
@@ -1101,12 +1761,38 @@ if st.session_state.screener_results is not None:
         st.session_state.last_sync_time = datetime.datetime.now().strftime("%H:%M:%S")
         st.session_state.last_sync_timestamp = current_time
 
+    # ── PROGRESSIVE SCAN STATUS BAR ──
+    if st.session_state.get("is_analyzing"):
+        total = len(st.session_state.analysis_universe)
+        idx = st.session_state.analysis_index
+        progress_pct = min(idx / total, 1.0) if total else 0.0
+        batch_label = st.session_state.get("analysis_batch", 0)
+        total_batches = st.session_state.get("analysis_total_batches", 0)
+        status_label = st.session_state.get("analysis_status", "Preparing batch...")
+        st.markdown(f"""
+        <div style="background: rgba(0, 102, 204, 0.08); border: 1px solid rgba(0, 102, 204, 0.22); padding: 14px 20px; border-radius: 8px; margin-bottom: 12px; position: relative; overflow: hidden;">
+            <div class="ford-scan-line"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div>
+                    <span class="live-dot"></span>
+                    <span style="font-size: 0.72rem; color: #5a7a9a; letter-spacing: 0.08em; font-weight: 700; text-transform: uppercase;">SCANNING IN PROGRESS...</span>
+                    <h3 style="margin: 4px 0 0; font-size: 1rem; color: #dde5f0;">⚡ {status_label} on {st.session_state.screened_universe} using {st.session_state.screened_strategy}...</h3>
+                </div>
+                <div style="text-align: right;">
+                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 1.15rem; font-weight: 700; color: #0080ff;">{idx}/{total} Stocks ({progress_pct*100:.0f}%)</span>
+                    <div style="font-size: 0.72rem; color: #5a7a9a; margin-top: 4px;">Batch {batch_label}/{total_batches}</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.progress(progress_pct)
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
     # ── FORD SYSTEM MONITOR STATUS BAR ──
     last_run  = st.session_state.get("last_run_time", "—")
     last_sync = st.session_state.get("last_sync_time", "—")
     news_last = st.session_state.get("last_news_scrape_timestamp", 0.0)
-    import time as _t
-    news_ago  = int(_t.time() - news_last) if news_last else 0
+    news_ago  = int(time.time() - news_last) if news_last else 0
     news_ago_str = f"{news_ago}s ago" if news_last else "Pending"
     data_cnt  = len(st.session_state.data_cache or {})
     news_cnt  = len(st.session_state.news_picks) if st.session_state.news_picks is not None and not st.session_state.get("news_picks", pd.DataFrame()).empty else 0
@@ -1125,18 +1811,22 @@ if st.session_state.screener_results is not None:
         unsafe_allow_html=True
     )
 
-    results_df = st.session_state.screener_results
-    past_df    = st.session_state.past_signals_results
+    results_df = _ensure_ticker_column(st.session_state.screener_results if st.session_state.screener_results is not None else pd.DataFrame())
+    past_df    = _ensure_ticker_column(st.session_state.past_signals_results if st.session_state.past_signals_results is not None else pd.DataFrame())
     data_cache = st.session_state.data_cache or {}
     ltp_cache  = st.session_state.ltp_cache or {}
+    news_df_session = _ensure_ticker_column(st.session_state.news_picks if st.session_state.news_picks is not None else pd.DataFrame())
+    medium_df_session = _ensure_ticker_column(st.session_state.medium_term_picks if st.session_state.medium_term_picks is not None else pd.DataFrame())
+    intra_df_session = _ensure_ticker_column(st.session_state.intraday_picks if st.session_state.intraday_picks is not None else pd.DataFrame())
 
-    tab1, tab2_intra, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2_intra, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "⚡  Live Picks & Prices",
         "🏃  Intraday Scanner",
         "📰  News Catalyst Scanner",
         "📊  Backtest Tracker",
         "🔍  Chart Analysis",
         "⚙️  3-Month Multi-Strategy Optimizer",
+        "📜  Analysis History",
     ])
 
     # ══════════════════════════════════════════════════════════════
@@ -1198,7 +1888,7 @@ if st.session_state.screener_results is not None:
 
 
         # — E. Medium-Term —
-        mt_df  = st.session_state.medium_term_picks
+        mt_df  = medium_df_session
         mt_cnt = len(mt_df) if (mt_df is not None and not mt_df.empty) else 0
         _sec_header("🚀", "Medium-Term Swing — 15 Days to 1 Month Hold",
                     count=mt_cnt, badge="EMA Cross · BB Squeeze")
@@ -1226,7 +1916,7 @@ if st.session_state.screener_results is not None:
         </div>
         """, unsafe_allow_html=True)
 
-        intra_df = st.session_state.intraday_picks
+        intra_df = intra_df_session
         intra_bt = st.session_state.intraday_backtest
 
         if intra_df is None or intra_df.empty:
@@ -1245,8 +1935,13 @@ if st.session_state.screener_results is not None:
 
             st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
             st.markdown("### 📋 Active Intraday Setups Table")
+            show_intra = intra_df[["Ticker", "Strategy", "Type", "Price", "Entry Range", "Target", "Stop Loss", "RSI", "Vol_Ratio", "Reason"]].copy()
+            # Coerce numeric columns to prevent PyArrow serialization ArrowTypeError
+            for numeric_col in ["Price", "Target", "Stop Loss", "RSI", "Vol_Ratio"]:
+                if numeric_col in show_intra.columns:
+                    show_intra[numeric_col] = pd.to_numeric(show_intra[numeric_col], errors='coerce')
             st.dataframe(
-                intra_df[["Ticker", "Strategy", "Type", "Price", "Entry Range", "Target", "Stop Loss", "RSI", "Vol_Ratio", "Reason"]],
+                show_intra,
                 column_config={
                     "Price": st.column_config.NumberColumn("CMP (₹)", format="₹%.2f"),
                     "Target": st.column_config.NumberColumn("Target (₹)", format="₹%.2f"),
@@ -1305,7 +2000,10 @@ if st.session_state.screener_results is not None:
         </div>
         """, unsafe_allow_html=True)
 
-        news_df = st.session_state.news_picks
+        news_df = news_df_session
+        if news_df is not None and not news_df.empty:
+            news_df = pd.DataFrame(news_helper.sort_news_items(news_df.to_dict("records")))
+            news_df = _ensure_ticker_column(news_df)
         news_cnt = len(news_df) if (news_df is not None and not news_df.empty) else 0
         news_bt_df = st.session_state.news_past_results
         
@@ -1332,8 +2030,19 @@ if st.session_state.screener_results is not None:
             
             st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
             st.markdown("### 📋 News Trade Setups Table")
+            desired_news_cols = ["Ticker", "DateTime", "Headline", "Catalyst", "Price", "Entry Range", "Target", "Stop Loss", "Sentiment"]
+            show_news = pd.DataFrame()
+            for col in desired_news_cols:
+                if col in news_df.columns:
+                    show_news[col] = news_df[col]
+                else:
+                    show_news[col] = ""
+            # Coerce numeric columns to prevent PyArrow serialization ArrowTypeError
+            for numeric_col in ["Price", "Target", "Stop Loss"]:
+                if numeric_col in show_news.columns:
+                    show_news[numeric_col] = pd.to_numeric(show_news[numeric_col], errors='coerce')
             st.dataframe(
-                news_df[["Ticker", "DateTime", "Headline", "Catalyst", "Price", "Entry Range", "Target", "Stop Loss", "Sentiment"]],
+                show_news,
                 column_config={
                     "DateTime": st.column_config.TextColumn("Date/Time"),
                     "Price": st.column_config.NumberColumn("Current Price (₹)", format="₹%.2f"),
@@ -1441,10 +2150,10 @@ if st.session_state.screener_results is not None:
         # Gather all ticker options
         all_syms = list(dict.fromkeys(
             (results_df["Ticker"].tolist() if not results_df.empty else []) +
-            (st.session_state.news_picks["Ticker"].tolist()
-             if st.session_state.news_picks is not None and not st.session_state.news_picks.empty else []) +
-            (st.session_state.medium_term_picks["Ticker"].tolist()
-             if st.session_state.medium_term_picks is not None and not st.session_state.medium_term_picks.empty else [])
+            (news_df_session["Ticker"].tolist()
+             if news_df_session is not None and not news_df_session.empty else []) +
+            (medium_df_session["Ticker"].tolist()
+             if medium_df_session is not None and not medium_df_session.empty else [])
         ))
 
         if not all_syms:
@@ -1664,29 +2373,25 @@ if st.session_state.screener_results is not None:
 
                     # ── Trade setup detail cards ──
                     selected_row = None
-                    if not results_df.empty and selected_ticker in results_df["Ticker"].values:
-                        selected_row = results_df[results_df["Ticker"] == selected_ticker].iloc[0].to_dict()
-                    elif (st.session_state.news_picks is not None and
-                          not st.session_state.news_picks.empty and
-                          selected_ticker in st.session_state.news_picks["Ticker"].values):
-                        nr = st.session_state.news_picks[
-                            st.session_state.news_picks["Ticker"] == selected_ticker
-                        ].iloc[0]
+                    normalized_results = _ensure_ticker_column(results_df)
+                    normalized_news = _ensure_ticker_column(st.session_state.news_picks)
+                    normalized_medium = _ensure_ticker_column(st.session_state.medium_term_picks)
+
+                    if not normalized_results.empty and selected_ticker in normalized_results["Ticker"].values:
+                        selected_row = normalized_results[normalized_results["Ticker"] == selected_ticker].iloc[0].to_dict()
+                    elif (normalized_news is not None and not normalized_news.empty and selected_ticker in normalized_news["Ticker"].values):
+                        nr = normalized_news[normalized_news["Ticker"] == selected_ticker].iloc[0]
                         selected_row = {
                             "Ticker": selected_ticker,
-                            "Price": nr["Price"], "Entry Range": nr["Entry Range"],
-                            "Stop Loss": nr["Stop Loss"], "Target": nr["Target"],
-                            "Risk_Reward": nr["Risk_Reward"],
+                            "Price": nr.get("Price"), "Entry Range": nr.get("Entry Range"),
+                            "Stop Loss": nr.get("Stop Loss"), "Target": nr.get("Target"),
+                            "Risk_Reward": nr.get("Risk_Reward"),
                             "High_Conviction": True, "Superstar_Buying": False,
-                            "Strategy": f"News: {nr['Catalyst']}",
-                            "Institutional_Details": nr["Headline"],
+                            "Strategy": f"News: {nr.get('Catalyst', 'News')}",
+                            "Institutional_Details": nr.get("Headline"),
                         }
-                    elif (st.session_state.medium_term_picks is not None and
-                          not st.session_state.medium_term_picks.empty and
-                          selected_ticker in st.session_state.medium_term_picks["Ticker"].values):
-                        selected_row = st.session_state.medium_term_picks[
-                            st.session_state.medium_term_picks["Ticker"] == selected_ticker
-                        ].iloc[0].to_dict()
+                    elif (normalized_medium is not None and not normalized_medium.empty and selected_ticker in normalized_medium["Ticker"].values):
+                        selected_row = normalized_medium[normalized_medium["Ticker"] == selected_ticker].iloc[0].to_dict()
 
                     if selected_row:
                         dc1, dc2 = st.columns(2)
@@ -1770,10 +2475,10 @@ if st.session_state.screener_results is not None:
         if opt_mode == "Single Stock Analysis":
             all_syms_opt = list(dict.fromkeys(
                 (results_df["Ticker"].tolist() if not results_df.empty else []) +
-                (st.session_state.news_picks["Ticker"].tolist()
-                 if st.session_state.news_picks is not None and not st.session_state.news_picks.empty else []) +
-                (st.session_state.medium_term_picks["Ticker"].tolist()
-                 if st.session_state.medium_term_picks is not None and not st.session_state.medium_term_picks.empty else [])
+                (news_df_session["Ticker"].tolist()
+                 if news_df_session is not None and not news_df_session.empty else []) +
+                (medium_df_session["Ticker"].tolist()
+                 if medium_df_session is not None and not medium_df_session.empty else [])
             ))
             
             if not all_syms_opt:
@@ -1890,8 +2595,13 @@ if st.session_state.screener_results is not None:
                                     return f"🟡 Time Exit ({p:+.2f}%)"
                             
                             trades_df["Outcome"] = trades_df.apply(_highlight_opt_status, axis=1)
+                            show_trades = trades_df[["Trigger Date", "Exit Date", "Entry Price", "Target", "Stop Loss", "Exit Price", "Days Held", "Outcome"]].copy()
+                            # Coerce numeric columns to prevent PyArrow serialization ArrowTypeError
+                            for numeric_col in ["Entry Price", "Target", "Stop Loss", "Exit Price", "Days Held"]:
+                                if numeric_col in show_trades.columns:
+                                    show_trades[numeric_col] = pd.to_numeric(show_trades[numeric_col], errors='coerce')
                             st.dataframe(
-                                trades_df[["Trigger Date", "Exit Date", "Entry Price", "Target", "Stop Loss", "Exit Price", "Days Held", "Outcome"]],
+                                show_trades,
                                 column_config={
                                     "Entry Price": st.column_config.NumberColumn("Entry Price (₹)", format="₹%.2f"),
                                     "Target": st.column_config.NumberColumn("Target (₹)", format="₹%.2f"),
@@ -2048,40 +2758,247 @@ if st.session_state.screener_results is not None:
                             key="download_leaderboard_csv"
                         )
 
+    # ══════════════════════════════════════════════════════════════
+    # TAB 7 — Analysis History with validation + Broker stats
+    # ══════════════════════════════════════════════════════════════
+    with tab6:
+        st.markdown("""
+        <div class="infobox">
+          <b>📜 Persistent Analysis History with Target/SL Validation</b><br>
+          Every full analysis run is saved. Previous picks are automatically validated against 
+          current prices: <b style="color:#3fb950;">Target Met ✅</b> / 
+          <b style="color:#f85149;">Stop Loss Hit 🔴</b> / 
+          <b style="color:#a78bfa;">Active 🟡</b> / Expired.
+          Short trades (SELL-BUY) are validated with reversed SL/Target logic.
+        </div>
+        """, unsafe_allow_html=True)
+
+        history_cache = hist.load_history_cache()
+        
+        # ── Overall Stats ──
+        stats = hist.get_history_stats(history_cache)
+        if stats["total_picks"] > 0:
+            hc1, hc2, hc3, hc4, hc5 = st.columns(5)
+            hc1.metric("Total Historical Picks", stats["total_picks"])
+            hc2.metric("✅ Target Met", stats["target_met"])
+            hc3.metric("🔴 Stop Loss Hit", stats["stop_loss_hit"])
+            hc4.metric("🟡 Active", stats["active"])
+            hc5.metric("🏆 Win Rate", f"{stats['win_rate']:.1f}%")
+            
+            st.markdown(f'<div style="margin-top:-8px; margin-bottom:12px; color:#5a7a9a; font-size:0.75rem;">Avg P&L: {stats["avg_pnl"]:+.2f}% · Expired: {stats["expired"]}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="infobox">No analysis history yet. Run a full analysis to start tracking.</div>', unsafe_allow_html=True)
+
+        # ── History Data Table ──
+        hist_df = hist.get_history_as_dataframe(history_cache)
+        if not hist_df.empty:
+            _sec_header("📋", "All Historical Picks (Last 60 Days)", count=len(hist_df))
+            
+            # Filter controls
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                status_filter = st.multiselect(
+                    "Filter by Status",
+                    options=["Active", "Target Met", "Stop Loss Hit", "Expired"],
+                    default=[],
+                    key="hist_status_filter"
+                )
+            with col_f2:
+                source_filter = st.multiselect(
+                    "Filter by Source",
+                    options=["swing", "medium", "intraday", "news"],
+                    default=[],
+                    key="hist_source_filter"
+                )
+            
+            display_df = hist_df.copy()
+            if status_filter:
+                display_df = display_df[display_df["Status"].isin(status_filter)]
+            if source_filter:
+                display_df = display_df[display_df["Source"].isin(source_filter)]
+            
+            if not display_df.empty:
+                # Sort by Entry Date descending
+                display_df = display_df.sort_values("Entry Date", ascending=False)
+                
+                # Color code the Status column
+                def _style_status(val):
+                    if val == "Target Met":
+                        return "color: #3fb950; font-weight: 700;"
+                    elif val == "Stop Loss Hit":
+                        return "color: #f85149; font-weight: 700;"
+                    elif val == "Active":
+                        return "color: #a78bfa; font-weight: 700;"
+                    return ""
+                
+                try:
+                    styled_hist = display_df.style.map(_style_status, subset=["Status"])
+                except Exception:
+                    styled_hist = display_df
+                
+                st.dataframe(
+                    styled_hist,
+                    column_config={
+                        "Entry Date": st.column_config.TextColumn("Date"),
+                        "Ticker": st.column_config.TextColumn("Stock"),
+                        "Strategy": st.column_config.TextColumn("Strategy"),
+                        "Type": st.column_config.TextColumn("Type"),
+                        "Source": st.column_config.TextColumn("Source"),
+                        "Price": st.column_config.NumberColumn("Price (₹)", format="₹%.2f"),
+                        "Target": st.column_config.NumberColumn("Target (₹)", format="₹%.2f"),
+                        "Stop Loss": st.column_config.NumberColumn("SL (₹)", format="₹%.2f"),
+                        "Status": st.column_config.TextColumn("Status"),
+                        "P&L (%)": st.column_config.NumberColumn("P&L", format="%+.2f%%"),
+                        "Exit Price": st.column_config.NumberColumn("Exit (₹)", format="₹%.2f"),
+                        "Exit Date": st.column_config.TextColumn("Exit Date"),
+                    },
+                    hide_index=True,
+                    width='stretch',
+                    height=400,
+                )
+                
+                st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+                st.download_button(
+                    "📥 Export History (CSV)",
+                    data=display_df.to_csv(index=False).encode(),
+                    file_name=f"analysis_history_{datetime.date.today()}.csv",
+                    mime="text/csv",
+                    key="download_history_csv"
+                )
+            else:
+                st.markdown('<div class="infobox">No entries match the selected filters.</div>', unsafe_allow_html=True)
+        
+        # ── Broker Stats Section ──
+        st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+        _sec_header("🏦", "Broker Call Success Rate", badge="Per-Broker Win Rate")
+        
+        broker_stats_df = hist.get_broker_stats_dataframe(history_cache)
+        if not broker_stats_df.empty:
+            st.dataframe(
+                broker_stats_df,
+                column_config={
+                    "Broker": st.column_config.TextColumn("Broker"),
+                    "Total Calls": st.column_config.NumberColumn("Total Calls"),
+                    "Successful": st.column_config.NumberColumn("Successful"),
+                    "Win Rate (%)": st.column_config.NumberColumn("Win Rate", format="%.1f%%"),
+                },
+                hide_index=True,
+                width='stretch',
+            )
+        else:
+            st.markdown('<div class="infobox">No broker call history yet. Broker picks with ticker & target will be tracked automatically on each full analysis run.</div>', unsafe_allow_html=True)
+
+        # ── Recent Broker Calls ──
+        if history_cache.get("broker_history"):
+            st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+            _sec_header("📋", "Recent Broker Calls", count=len(history_cache["broker_history"]))
+            broker_df = pd.DataFrame(history_cache["broker_history"])
+            if not broker_df.empty:
+                broker_df = broker_df.sort_values("Entry Date", ascending=False).head(20)
+                st.dataframe(
+                    broker_df,
+                    column_config={
+                        "Broker": st.column_config.TextColumn("Broker"),
+                        "Ticker": st.column_config.TextColumn("Stock"),
+                        "Action": st.column_config.TextColumn("Action"),
+                        "Target": st.column_config.NumberColumn("Target (₹)", format="₹%.2f"),
+                        "Current Price": st.column_config.NumberColumn("Current (₹)", format="₹%.2f"),
+                        "Status": st.column_config.TextColumn("Status"),
+                        "Entry Date": st.column_config.TextColumn("Date"),
+                    },
+                    hide_index=True,
+                    width='stretch',
+                )
+
 # ─────────────────────────────────────────────────────────────────────────────
 # EMPTY STATE (before first run)
 # ─────────────────────────────────────────────────────────────────────────────
 else:
     st.markdown("""
-    <div class="empty-state">
-      <div class="empty-state-icon">⚡</div>
-      <div class="empty-state-title">Ready to scan the markets</div>
-      <div class="empty-state-sub">
-        Select your stock universe and strategy in the sidebar,
-        then click <b style="color:#58a6ff;">Run Full Analysis</b>
-        to find today's best swing trade setups — with live NSE prices.
+    <div style="padding:4px 0 14px; margin-top:-10px;">
+      <h2 style="margin:0; font-size:1.15rem; font-weight:800; color:#dde5f0; letter-spacing:-0.01em;">
+        📰  PULSE NEWS DESK & MARKET INTELLIGENCE CENTER
+      </h2>
+      <p style="font-size:0.75rem; color:#5a7a9a; margin-top:2px; margin-bottom:12px;">
+        Real-time news catalysts parsed from active financial feeds. Initialized automatically on startup.
+      </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([1, 2])
+    
+    # Filter news into Market (Macro) and Stock (Micro) scopes
+    if st.session_state.news_picks is not None and not st.session_state.news_picks.empty:
+        market_news = st.session_state.news_picks[st.session_state.news_picks["Scope"] == "Market"]
+        stock_news = st.session_state.news_picks[st.session_state.news_picks["Scope"] == "Stock"]
+    else:
+        market_news = pd.DataFrame()
+        stock_news = pd.DataFrame()
+        
+    with col1:
+        _sec_header("🌎", "Global Market Sentiment & Macro Highlights", count=len(market_news) if not market_news.empty else 0)
+        if market_news.empty:
+            st.markdown('<div class="infobox">No major macro-level market updates found in today\'s news feeds.</div>', unsafe_allow_html=True)
+        else:
+            for _, row in market_news.iterrows():
+                headline = row.get("Headline", "")
+                sentiment = row.get("Sentiment", "Positive")
+                catalyst = row.get("Catalyst", "Macro Catalyst")
+                dt_str = row.get("DateTime", "")
+                if "T" in dt_str:
+                    dt_str = dt_str.split("T")[0]
+                
+                badge_color = "#00c853" if sentiment == "Positive" else "#ff4d4d"
+                bg_color = "rgba(0, 200, 83, 0.04)" if sentiment == "Positive" else "rgba(255, 77, 77, 0.04)"
+                border_color = "rgba(0, 200, 83, 0.15)" if sentiment == "Positive" else "rgba(255, 77, 77, 0.15)"
+                
+                st.markdown(f"""
+                <div style="background:{bg_color}; border:1px solid {border_color}; border-radius:6px; padding:10px 14px; margin-bottom:8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                        <span style="font-size:0.6rem; font-family:'JetBrains Mono',monospace; color:#5a7a9a; font-weight:700; text-transform:uppercase;">{catalyst}</span>
+                        <span style="font-size:0.58rem; color:#5a7a9a;">{dt_str}</span>
+                    </div>
+                    <div style="font-size:0.83rem; font-weight:600; color:#dde5f0; line-height:1.45;">
+                        {headline}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+    with col2:
+        _sec_header("💼", "Stock-Specific Catalyst Trade Setups", count=len(stock_news) if not stock_news.empty else 0, badge="Actionable Swings")
+        if stock_news.empty:
+            st.markdown('<div class="infobox">No stock-specific catalyst trade recommendations found. Run Full Analysis to screen technical universes.</div>', unsafe_allow_html=True)
+        else:
+            _render_cards(stock_news, st.session_state.ltp_cache or {}, card_type="news")
+            
+    st.markdown("---")
+    
+    st.markdown("""
+    <div class="empty-state" style="padding:32px 24px 36px; margin-top:10px; background: linear-gradient(145deg, #070e1a, #040a12); border: 1px solid #0d1f35; border-radius: 10px;">
+      <div class="empty-state-icon" style="font-size: 2.2rem; margin-bottom: 8px;">⚡</div>
+      <div class="empty-state-title" style="font-size: 1.1rem; color: #dde5f0; font-weight: 800;">Ready to run a deep market scan?</div>
+      <div class="empty-state-sub" style="font-size: 0.78rem; max-width: 540px; margin: 6px auto 20px; color: #5a7a9a; line-height: 1.7;">
+        Select your target universe (Nifty 50, 100, 500, 1000 or F&O Stocks) and strategy in the sidebar, 
+        then click <b>Run Full Analysis</b>. The engine will screen stocks progressively in batches of 10 and display active opportunities instantly!
       </div>
       <div class="caps-grid">
-        <div class="cap-card">
+        <div class="cap-card" style="min-width: 140px; padding: 10px 14px;">
           <div class="cap-lbl">Data Source</div>
-          <div class="cap-val">NSE · yfinance</div>
+          <div class="cap-val" style="font-size: 0.8rem; color: #dde5f0;">NSE · yfinance</div>
         </div>
-        <div class="cap-card">
+        <div class="cap-card" style="min-width: 140px; padding: 10px 14px;">
           <div class="cap-lbl">Live Prices</div>
-          <div class="cap-val" style="color:#3fb950;">● nsepython LTP</div>
+          <div class="cap-val" style="color: #00c853; font-size: 0.8rem;">● nsepython LTP</div>
         </div>
-        <div class="cap-card">
-          <div class="cap-lbl">Universe</div>
-          <div class="cap-val">Nifty 50 → 1000</div>
+        <div class="cap-card" style="min-width: 140px; padding: 10px 14px;">
+          <div class="cap-lbl">Progressive Scan</div>
+          <div class="cap-val" style="color: #0080ff; font-size: 0.8rem;">10-by-10 Streaming</div>
         </div>
-        <div class="cap-card">
-          <div class="cap-lbl">Strategies</div>
-          <div class="cap-val">5 Short + 2 Medium</div>
+        <div class="cap-card" style="min-width: 140px; padding: 10px 14px;">
+          <div class="cap-lbl">Intraday Mode</div>
+          <div class="cap-val" style="color: #fb923c; font-size: 0.8rem;">VWAP & Momentum</div>
         </div>
-        <div class="cap-card">
-          <div class="cap-lbl">Institutional</div>
-          <div class="cap-val">FII · MF · Superstar</div>
-        </div>
+      </div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -2108,32 +3025,32 @@ if auto_refresh and st.session_state.screener_results is not None:
     """, unsafe_allow_html=True)
 
     # JS uses setInterval (repeating) not setTimeout (one-shot)
-    st.iframe(
-        """
+    refresh_interval = 2000 if st.session_state.get("is_analyzing") else 60000
+    st.html(
+        f"""
         <script>
-        (function() {
+        (function() {{
             const parentDoc = window.parent.document;
-            function clickHiddenRerun() {
+            function clickHiddenRerun() {{
                 const buttons = parentDoc.querySelectorAll('button');
-                for (const btn of buttons) {
+                for (const btn of buttons) {{
                     const text = (btn.textContent || btn.innerText || '').trim();
-                    if (text === 'hidden_rerun' || text.includes('hidden_rerun')) {
+                    if (text === 'hidden_rerun' || text.includes('hidden_rerun')) {{
                         let parent = btn.closest('[data-testid="stElementContainer"]')
                                   || btn.closest('.element-container')
                                   || btn.parentElement;
                         if (parent) parent.style.cssText = 'display:none!important;height:0!important;overflow:hidden!important;';
                         btn.click();
                         return;
-                    }
-                }
-            }
-            // Fire once immediately after 10s, then repeat every 10s
-            setTimeout(function() {
+                    }}
+                }}
+            }}
+            setTimeout(function() {{
                 clickHiddenRerun();
-                setInterval(clickHiddenRerun, 10000);
-            }, 10000);
-        })();
+                setInterval(clickHiddenRerun, {refresh_interval});
+            }}, {refresh_interval});
+        }})();
         </script>
         """,
-        height=1,
+        unsafe_allow_javascript=True,
     )

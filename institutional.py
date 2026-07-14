@@ -6,10 +6,17 @@ institutional buyers (Mutual Funds, LIC, FIIs) and superstar retail investors.
 HFT prop-desk and arbitrage firms are excluded from Tier-1 conviction matching
 using exact-match firm names (no fuzzy partial strings) + minimum qty filter.
 """
+from typing import Optional
 import pandas as pd
 import streamlit as st
-from nselib.nsdl_fpi import fetch_nsdl_fpi_latest_investment_activity
-from nselib.capital_market import bulk_deal_data
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+try:
+    from nselib.nsdl_fpi import fetch_nsdl_fpi_latest_investment_activity
+    from nselib.capital_market import bulk_deal_data
+    _HAS_NSELIB = True
+except ImportError:
+    _HAS_NSELIB = False
 
 # ---------------------------------------------------------------------------
 # Known superstar retail investors (exact NSE bulk deal client name strings)
@@ -79,28 +86,21 @@ MIN_CONVICTION_QTY = 5_000
 # ---------------------------------------------------------------------------
 
 @st.cache_data(ttl=1800)
-def get_latest_fii_sentiment():
+@retry(
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=1, min=2, max=5),
+    retry=retry_if_exception_type((Exception,))
+)
+def get_latest_fii_sentiment() -> tuple[Optional[float], Optional[str]]:
     """
     Returns (net_flow_crores: float, report_date: str) or (None, None).
-    First tries real-time daily FII/DII provisional data from nsepython.
-    Falls back to NSDL historical FPI data on failure.
+    First tries NSDL historical FPI data.
+    Falls back to alternative sources on failure.
     """
-    # 1. Try real-time daily provisional FII/FPI activity from NSE
-    try:
-        from nsepython import nse_fiidii
-        df = nse_fiidii(mode="pandas")
-        if df is not None and not df.empty and 'category' in df.columns:
-            # Look for FII/FPI category
-            fii_row = df[df['category'].str.upper().str.contains('FII|FPI', na=False)]
-            if not fii_row.empty:
-                net_val = fii_row['netValue'].iloc[0]
-                net_flow = float(str(net_val).replace(',', '').strip())
-                report_date = fii_row['date'].iloc[0]
-                return round(net_flow, 2), str(report_date)
-    except Exception as e:
-        print(f"[FII Info] Realtime NSE FII fetch failed: {e}. Trying NSDL fallback...")
+    if not _HAS_NSELIB:
+        return None, None
 
-    # 2. Fallback to NSDL FPI investment activity
+    # 1. Try NSDL FPI investment activity (primary source)
     try:
         df = fetch_nsdl_fpi_latest_investment_activity()
         if df is not None and not df.empty and 'ASSET_CLASS' in df.columns:
@@ -109,24 +109,74 @@ def get_latest_fii_sentiment():
                 net_flow = equity['NET_INVESTMENT_RS_CR'].sum()
                 report_date = equity['REPORT_DATE'].iloc[0]
                 return round(net_flow, 2), str(report_date)
+    except Exception as e:
+        print(f"[FII Info] NSDL fetch failed: {e}. Trying alternative...")
+
+    # 2. Fallback: Try NSE live endpoint
+    try:
+        import data_provider as dp
+        session = dp._get_nse_session()
+        resp = session.get("https://www.nseindia.com/api/fiidii", timeout=2.5)
+        if resp.status_code == 200:
+            data = resp.json()
+            # Parse FII data from response
+            fii_data = data.get('data', [])
+            for item in fii_data:
+                if 'FII' in item.get('category', '').upper():
+                    net_val = item.get('netValue', 0)
+                    net_flow = float(str(net_val).replace(',', '').strip())
+                    date_val = item.get('date', '')
+                    return round(net_flow, 2), str(date_val)
     except Exception as fallback_err:
-        print(f"[FII Fallback] NSDL FPI fallback failed: {fallback_err}")
+        print(f"[FII Fallback] NSE FII fetch failed: {fallback_err}")
         
     return None, None
 
 
-def get_recent_bulk_deals() -> pd.DataFrame | None:
+@retry(
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=1, min=1, max=3),
+    retry=retry_if_exception_type((Exception,))
+)
+def get_recent_bulk_deals() -> Optional[pd.DataFrame]:
     """
     Fetches bulk deals for the last 7 days.
     Returns cleaned DataFrame or None.
     """
+    if not _HAS_NSELIB:
+        return None
+    
     try:
         df = bulk_deal_data(period='1W')
         if df is not None and not df.empty:
             df = df.copy()
-            df['Symbol']   = df['Symbol'].str.strip().str.upper()
-            df['Buy/Sell']  = df['Buy/Sell'].str.strip().str.upper()
-            df['ClientName'] = df['ClientName'].str.strip().str.upper()
+            # Normalize column names (handle case variations)
+            df.columns = df.columns.str.strip()
+            col_map = {}
+            for col in df.columns:
+                col_lower = col.lower()
+                if 'symbol' in col_lower:
+                    col_map[col] = 'Symbol'
+                elif 'buy' in col_lower and 'sell' in col_lower:
+                    col_map[col] = 'Buy/Sell'
+                elif 'client' in col_lower:
+                    col_map[col] = 'ClientName'
+                elif 'quantity' in col_lower:
+                    col_map[col] = 'QuantityTraded'
+                elif 'price' in col_lower or 'wght' in col_lower:
+                    col_map[col] = 'TradePrice/Wght.Avg.Price'
+                elif 'date' in col_lower:
+                    col_map[col] = 'Date'
+            df.rename(columns=col_map, inplace=True)
+            
+            required_cols = ['Symbol', 'Buy/Sell']
+            if not all(col in df.columns for col in required_cols):
+                return df
+            
+            df['Symbol'] = df['Symbol'].astype(str).str.strip().str.upper()
+            df['Buy/Sell'] = df['Buy/Sell'].astype(str).str.strip().str.upper()
+            if 'ClientName' in df.columns:
+                df['ClientName'] = df['ClientName'].astype(str).str.strip().str.upper()
             return df
     except Exception as e:
         print(f"[Bulk Deals] Error: {e}")

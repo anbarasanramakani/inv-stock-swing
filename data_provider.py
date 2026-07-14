@@ -10,11 +10,20 @@ Data Sources:
 import os
 import datetime
 import time
+from pathlib import Path
+from typing import Optional
 
 import yfinance as yf
 import pandas as pd
-import streamlit as st
 import requests
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
+# Streamlit is optional — used only when running as the Streamlit frontend
+try:
+    import streamlit as st
+    _HAS_STREAMLIT = True
+except ImportError:
+    _HAS_STREAMLIT = False
 
 # ---------------------------------------------------------------------------
 # NSE request headers (required to avoid 401 from NSE servers)
@@ -28,14 +37,16 @@ _NSE_HEADERS = {
 }
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((requests.RequestException, ConnectionError))
+)
 def _get_nse_session() -> requests.Session:
-    """Returns a requests.Session seeded with NSE cookies."""
+    """Returns a requests.Session seeded with NSE cookies with retry logic."""
     session = requests.Session()
     session.headers.update(_NSE_HEADERS)
-    try:
-        session.get("https://www.nseindia.com", timeout=10)
-    except Exception:
-        pass
+    session.get("https://www.nseindia.com", timeout=2.5)
     return session
 
 
@@ -70,7 +81,13 @@ def _flatten_and_clean(df: pd.DataFrame, min_rows: int = 2) -> pd.DataFrame | No
 # ---------------------------------------------------------------------------
 # Live Index Data — NSE JSON (60-second cache, completely free)
 # ---------------------------------------------------------------------------
-@st.cache_data(ttl=60)
+def _cache_data_decorator(fn):
+    """Apply st.cache_data only when running under Streamlit."""
+    if _HAS_STREAMLIT:
+        return st.cache_data(ttl=60)(fn)
+    return fn
+
+@_cache_data_decorator
 def get_live_nse_indices() -> list:
     """
     Fetches live index levels from NSE India's allIndices JSON endpoint.
@@ -80,7 +97,7 @@ def get_live_nse_indices() -> list:
     WANTED = {"NIFTY 50", "NIFTY BANK", "NIFTY IT", "NIFTY MIDCAP 100", "NIFTY 500"}
     try:
         session = _get_nse_session()
-        resp = session.get("https://www.nseindia.com/api/allIndices", timeout=10)
+        resp = session.get("https://www.nseindia.com/api/allIndices", timeout=2.5)
         if resp.status_code == 200:
             results = []
             for item in resp.json().get("data", []):
@@ -100,19 +117,27 @@ def get_live_nse_indices() -> list:
 
 
 # ---------------------------------------------------------------------------
-# Live LTP — nsepython → yfinance 1-min fallback
+# Live LTP — nselib → yfinance 1-min fallback
 # ---------------------------------------------------------------------------
-def get_live_ltp(symbol: str) -> float | None:
+@retry(
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=1, min=1, max=5),
+    retry=retry_if_exception_type((requests.RequestException,))
+)
+def get_live_ltp(symbol: str) -> Optional[float]:
     """
     Returns live Last Traded Price for an NSE symbol (WITHOUT .NS suffix).
-    Priority: nsepython → yfinance 1-min intraday.
+    Priority: nselib → yfinance 1-min intraday.
     """
-    # 1. nsepython (fastest during market hours)
+    # 1. nselib (more reliable than nsepython)
     try:
-        from nsepython import nse_quote_ltp
-        ltp = nse_quote_ltp(symbol, series="EQ")
-        if ltp and float(ltp) > 0:
-            return float(ltp)
+        from nselib import Nse
+        nse = Nse()
+        quote = nse.get_quote(symbol)
+        if quote and 'lastPrice' in quote:
+            ltp = float(quote['lastPrice'])
+            if ltp > 0:
+                return ltp
     except Exception:
         pass
 
@@ -120,7 +145,7 @@ def get_live_ltp(symbol: str) -> float | None:
     try:
         ticker_sym = f"{symbol}.NS"
         live_df = yf.download(ticker_sym, period="1d", interval="1m",
-                               auto_adjust=True, progress=False)
+                               auto_adjust=True, progress=False, threads=False)
         if not live_df.empty:
             df_clean = _flatten_and_clean(live_df, min_rows=1)
             if df_clean is not None:
@@ -134,8 +159,8 @@ def get_live_ltp(symbol: str) -> float | None:
 # ---------------------------------------------------------------------------
 # Batch Historical Downloader — yfinance EOD daily (Cache-Backed Incremental)
 # ---------------------------------------------------------------------------
-_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache")
-os.makedirs(_CACHE_DIR, exist_ok=True)
+_CACHE_DIR = Path(__file__).parent / ".cache"
+_CACHE_DIR.mkdir(exist_ok=True)
 
 def _load_cached_ticker(ticker: str) -> pd.DataFrame | None:
     cache_path = os.path.join(_CACHE_DIR, f"{ticker}.csv")

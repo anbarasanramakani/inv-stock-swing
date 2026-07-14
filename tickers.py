@@ -9,10 +9,13 @@ Universes:
   - Nifty 1000 : Nifty 500 + liquid EQ series stocks from EQUITY_L.csv
   - F&O        : ~220 F&O-eligible stocks (most liquid, best for intraday)
 """
+from pathlib import Path
+from typing import Optional
 import os
 import pandas as pd
 import requests
 from io import StringIO
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # ---------------------------------------------------------------------------
 # Current Nifty 50 constituents (verified July 2026)
@@ -87,14 +90,28 @@ FNO_ELIGIBLE_SYMBOLS = [
 # ---------------------------------------------------------------------------
 # Cache file paths
 # ---------------------------------------------------------------------------
-_DIR = os.path.dirname(os.path.abspath(__file__))
-NIFTY500_CSV_PATH = os.path.join(_DIR, "nifty500_cache.csv")
-NIFTY1000_CSV_PATH = os.path.join(_DIR, "nifty1000_cache.csv")
+_DIR = Path(__file__).parent
+NIFTY500_CSV_PATH = _DIR / "nifty500_cache.csv"
+NIFTY1000_CSV_PATH = _DIR / "nifty1000_cache.csv"
+ALL_NSE_CSV_PATH = _DIR / "all_nse_cache.csv"
 
 _NSE_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                   "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 }
+
+
+@retry(
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=1, min=1, max=3),
+    retry=retry_if_exception_type((requests.RequestException,))
+)
+def _download_csv(url: str) -> Optional[pd.DataFrame]:
+    """Download CSV from NSE with retry logic."""
+    resp = requests.get(url, headers=_NSE_HEADERS, timeout=15)
+    resp.raise_for_status()
+    return pd.read_csv(StringIO(resp.text))
+
 
 # ---------------------------------------------------------------------------
 # Public functions
@@ -120,7 +137,7 @@ def get_nifty500_tickers() -> list[str]:
     """
     Returns Nifty 500 tickers. Tries local cache → NSE archives → fallback to Nifty 100.
     """
-    if os.path.exists(NIFTY500_CSV_PATH):
+    if NIFTY500_CSV_PATH.exists():
         try:
             df = pd.read_csv(NIFTY500_CSV_PATH)
             if "Symbol" in df.columns:
@@ -136,13 +153,11 @@ def get_nifty500_tickers() -> list[str]:
     ]:
         try:
             print(f"Downloading Nifty 500 from {url} ...")
-            resp = requests.get(url, headers=_NSE_HEADERS, timeout=15)
-            if resp.status_code == 200:
-                df = pd.read_csv(StringIO(resp.text))
-                if "Symbol" in df.columns:
-                    df.to_csv(NIFTY500_CSV_PATH, index=False)
-                    syms = df["Symbol"].dropna().astype(str).str.strip().tolist()
-                    return [f"{s}.NS" for s in syms if s]
+            df = _download_csv(url)
+            if df is not None and "Symbol" in df.columns:
+                df.to_csv(NIFTY500_CSV_PATH, index=False)
+                syms = df["Symbol"].dropna().astype(str).str.strip().tolist()
+                return [f"{s}.NS" for s in syms if s]
         except Exception as e:
             print(f"Failed from {url}: {e}")
 
@@ -150,13 +165,12 @@ def get_nifty500_tickers() -> list[str]:
     return get_nifty100_tickers()
 
 
-ALL_NSE_CSV_PATH = os.path.join(_DIR, "all_nse_cache.csv")
 
 def get_nifty1000_tickers() -> list[str]:
     """
     Builds a Nifty 1000 list: Nifty 500 + liquid EQ stocks from EQUITY_L.csv.
     """
-    if os.path.exists(NIFTY1000_CSV_PATH):
+    if NIFTY1000_CSV_PATH.exists():
         try:
             df = pd.read_csv(NIFTY1000_CSV_PATH)
             if "Symbol" in df.columns:
@@ -171,22 +185,17 @@ def get_nifty1000_tickers() -> list[str]:
 
     try:
         print("Downloading EQUITY_L to build Nifty 1000...")
-        resp = requests.get(
-            "https://archives.nseindia.com/content/equities/EQUITY_L.csv",
-            headers=_NSE_HEADERS, timeout=15
-        )
-        if resp.status_code == 200:
-            df = pd.read_csv(StringIO(resp.text))
-            if 'SYMBOL' in df.columns and ' SERIES' in df.columns:
-                eq_syms = (
-                    df[df[' SERIES'].str.strip() == 'EQ']['SYMBOL']
-                    .dropna().astype(str).str.strip().tolist()
-                )
-                for sym in eq_syms:
-                    if sym and sym not in unique_symbols:
-                        unique_symbols.append(sym)
-                    if len(unique_symbols) >= 1000:
-                        break
+        df = _download_csv("https://archives.nseindia.com/content/equities/EQUITY_L.csv")
+        if df is not None and 'SYMBOL' in df.columns and ' SERIES' in df.columns:
+            eq_syms = (
+                df[df[' SERIES'].str.strip() == 'EQ']['SYMBOL']
+                .dropna().astype(str).str.strip().tolist()
+            )
+            for sym in eq_syms:
+                if sym and sym not in unique_symbols:
+                    unique_symbols.append(sym)
+                if len(unique_symbols) >= 1000:
+                    break
     except Exception as e:
         print(f"Error building Nifty 1000: {e}")
 
@@ -199,7 +208,7 @@ def get_all_nse_tickers() -> list[str]:
     Returns all listed symbols on NSE (Series EQ).
     Tries local cache -> NSE EQUITY_L.csv -> fallback to Nifty 1000.
     """
-    if os.path.exists(ALL_NSE_CSV_PATH):
+    if ALL_NSE_CSV_PATH.exists():
         try:
             df = pd.read_csv(ALL_NSE_CSV_PATH)
             if "Symbol" in df.columns:

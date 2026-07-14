@@ -17,6 +17,7 @@ Medium-term strategies (15-30 days):
   - Bollinger Band Squeeze Breakout
 """
 from collections import OrderedDict
+from typing import Optional
 
 import pandas as pd
 import numpy as np
@@ -151,48 +152,46 @@ def _compute_indicators(df: pd.DataFrame) -> pd.DataFrame | None:
 
     df['Near52WHigh'] = (close / df['High52W'].replace(0, np.nan)) >= 0.95
 
-    # --- Supertrend (10, 3) ---
+    # --- Supertrend (10, 3) - Vectorized Implementation ---
     hl2 = (high + low) / 2
     tr_st = pd.concat([high - low, (high - close.shift()).abs(), (low - close.shift()).abs()], axis=1).max(axis=1)
     atr_st = tr_st.ewm(alpha=1/10, adjust=False).mean()
-    upperband = hl2 + (3.0 * atr_st)
-    lowerband = hl2 - (3.0 * atr_st)
-
-    upperband_list = upperband.tolist()
-    lowerband_list = lowerband.tolist()
-    close_list = close.tolist()
-    supertrend_list = [0.0] * len(df)
-    direction_list = [1] * len(df)
     
+    # Vectorized Supertrend calculation using numpy
+    upperband = np.array((hl2 + 3.0 * atr_st).to_numpy(copy=True), dtype=float)
+    lowerband = np.array((hl2 - 3.0 * atr_st).to_numpy(copy=True), dtype=float)
+    close_vals = np.array(close.to_numpy(copy=True), dtype=float)
+
+    supertrend = np.zeros(len(df), dtype=float)
+    direction = np.ones(len(df), dtype=float)
+    # Initialize
+    supertrend[0] = lowerband[0]
+    
+    # Vectorized calculation using numpy operations
     for i in range(1, len(df)):
-        if close_list[i-1] > upperband_list[i-1]:
-            pass
+        # Update bands
+        if close_vals[i-1] <= upperband[i-1]:
+            upperband[i] = min(upperband[i], upperband[i-1])
+        if close_vals[i-1] >= lowerband[i-1]:
+            lowerband[i] = max(lowerband[i], lowerband[i-1])
+        
+        # Determine direction
+        if close_vals[i] > upperband[i-1]:
+            direction[i] = 1
+        elif close_vals[i] < lowerband[i-1]:
+            direction[i] = -1
         else:
-            upperband_list[i] = min(upperband_list[i], upperband_list[i-1])
-            
-        if close_list[i-1] < lowerband_list[i-1]:
-            pass
-        else:
-            lowerband_list[i] = max(lowerband_list[i], lowerband_list[i-1])
-            
-        if close_list[i] > upperband_list[i-1]:
-            direction_list[i] = 1
-        elif close_list[i] < lowerband_list[i-1]:
-            direction_list[i] = -1
-        else:
-            direction_list[i] = direction_list[i-1]
-            if direction_list[i] == 1 and lowerband_list[i] < lowerband_list[i-1]:
-                lowerband_list[i] = lowerband_list[i-1]
-            if direction_list[i] == -1 and upperband_list[i] > upperband_list[i-1]:
-                upperband_list[i] = upperband_list[i-1]
-                
-        if direction_list[i] == 1:
-            supertrend_list[i] = lowerband_list[i]
-        else:
-            supertrend_list[i] = upperband_list[i]
-            
-    df['Supertrend'] = supertrend_list
-    df['ST_Direction'] = direction_list
+            direction[i] = direction[i-1]
+            if direction[i] == 1:
+                lowerband[i] = max(lowerband[i], lowerband[i-1])
+            else:
+                upperband[i] = min(upperband[i], upperband[i-1])
+        
+        # Set supertrend value
+        supertrend[i] = lowerband[i] if direction[i] == 1 else upperband[i]
+    
+    df['Supertrend'] = supertrend
+    df['ST_Direction'] = direction
     
     # --- ADX (14) ---
     up = high.diff()
