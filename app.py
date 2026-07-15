@@ -501,6 +501,20 @@ importlib.reload(intra)
 importlib.reload(hist)
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Scheduled Analysis Trigger (for UptimeRobot / external cron)
+# ─────────────────────────────────────────────────────────────────────────────
+# Access: https://your-app.streamlit.app/?trigger_analysis=true
+# Triggers Full Analysis on Nifty 1000 when pinged by UptimeRobot
+try:
+    if st.query_params.get("trigger_analysis") == "true":
+        from scheduler import run_full_scheduled_analysis
+        result = run_full_scheduled_analysis()
+        st.markdown(f"**Scheduled Full Analysis Complete.** Generated picks on Nifty 1000.")
+        st.stop()
+except Exception:
+    pass
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Session state init
 # ─────────────────────────────────────────────────────────────────────────────
 _SS_KEYS = ["screener_results", "past_signals_results", "news_picks",
