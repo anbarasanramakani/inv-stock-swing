@@ -664,19 +664,8 @@ with st.sidebar:
     st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
     auto_refresh = st.checkbox("🔄 Auto-Refresh (1m)", value=True, help="Auto-sync live prices and news feeds every 60 seconds.")
     st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-    st.markdown("<div style='font-size:0.68rem;font-weight:700;color:#5a7a9a;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;'>Analysis Tasks</div>", unsafe_allow_html=True)
-    run_swing_btn = st.button("⚡ Run Swing Screener", key="run_swing_btn")
-    run_intra_btn = st.button("🏃 Run Intraday Scanner", key="run_intra_btn")
-    run_mt_btn = st.button("🚀 Run Medium-Term Scan", key="run_mt_btn")
-    run_full_btn = st.button("🔥 Run Full Combined Analysis", key="run_full_btn")
-    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    with col1:
-        refresh_news_btn = st.button("📰 Quick Refresh News")
-    with col2:
-        fresh_start_btn = st.button("🧹 Fresh Start", help="Reset the scanner and start from a clean slate.")
-    with col2:
-        load_news_btn = st.button("🔄 Load Full News Coverage")
+    load_news_btn = st.button("📰 Load Full News Coverage", key="load_news_btn")
+    run_full_btn = st.button("🔥 Run Full Analysis (Nifty 1000)", key="run_full_btn")
 
     st.markdown("""
     <hr style="border:none;border-top:1px solid #21262d;margin:14px 0 10px;">
@@ -1091,6 +1080,15 @@ def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, sta
                     if intra_res:
                         intraday_picks.extend(intra_res)
                     intraday_backtest.extend(intra.backtest_intraday_10days(ticker, df))
+                    
+                    # Harmony Pattern Detection
+                    try:
+                        harmony_res = scr.detect_harmony_patterns(df)
+                        if harmony_res:
+                            harmony_res["Ticker"] = ticker
+                            matching.append(harmony_res)
+                    except Exception:
+                        pass
                 except Exception:
                     continue
 

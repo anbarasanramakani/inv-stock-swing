@@ -424,6 +424,207 @@ def run_medium_term_screener(ticker: str, df: pd.DataFrame) -> dict | None:
                 "Vol_Ratio":   round(float(r['Vol_Ratio']) if not pd.isna(r['Vol_Ratio']) else 0, 2),
                 "RSI":         round(float(r['RSI']), 1),
                 "High_Conviction": False,
-            }
+    }
 
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Harmony Pattern Detection (Gartley, Butterfly, Bat, Crab, Shark)
+# ─────────────────────────────────────────────────────────────────────────────
+def detect_harmony_patterns(df: pd.DataFrame) -> dict | None:
+    """
+    Detects harmonic chart patterns (Gartley, Butterfly, Bat, Crab, Shark)
+    using Zig-Zag pivot detection and Fibonacci ratio validation.
+    
+    Returns pattern details with entry, SL, target suggestions if found.
+    """
+    if df is None or len(df) < 120:
+        return None
+
+    close = df['Close'].values
+    high = df['High'].values
+    low = df['Low'].values
+    length = len(close)
+
+    # 1. Zig-Zag pivot detection (lookback 5 bars)
+    pivots = []
+    lookback = 5
+    for i in range(lookback, length - lookback):
+        is_high = high[i] == max(high[i - lookback:i + lookback + 1])
+        is_low = low[i] == min(low[i - lookback:i + lookback + 1])
+        if is_high or is_low:
+            pivots.append((i, high[i] if is_high else low[i], 'H' if is_high else 'L'))
+
+    if len(pivots) < 5:
+        return None
+
+    # 2. Check for 5-point harmonic patterns (X-A-B-C-D)
+    patterns = []
+    
+    for i in range(len(pivots) - 4):
+        X = pivots[i]
+        A = pivots[i + 1]
+        B = pivots[i + 2]
+        C = pivots[i + 3]
+        D = pivots[i + 4]
+        
+        # Ensure alternating pattern: X, A, B, C, D must alternate L/H/L/H/L or H/L/H/L/H
+        if not (X[2] != A[2] and A[2] != B[2] and B[2] != C[2] and C[2] != D[2]):
+            continue
+        
+        # Calculate swings
+        XA = abs(A[1] - X[1])
+        AB = abs(B[1] - A[1])
+        BC = abs(C[1] - B[1])
+        CD = abs(D[1] - C[1])
+        
+        if XA == 0 or AB == 0 or BC == 0:
+            continue
+        
+        # Check retracement ratios
+        retrace_AB = AB / XA  # B retracement of XA
+        retrace_BC = BC / AB  # C retracement of AB
+        retrace_CD = CD / BC  # D retracement of BC
+        
+        # Current price for reference
+        current_price = close[-1]
+        
+        # --- Gartley (222) ---
+        if 0.382 <= retrace_BC <= 0.886:
+            # Bullish Gartley: X=Low, A=High, B=Low, C=High, D=Low
+            if X[2] == 'L' and A[2] == 'H' and 0.618 - 0.02 <= retrace_AB <= 0.618 + 0.02:
+                entry = D[1]
+                stop_loss = entry * 0.98
+                target = A[1]
+                patterns.append({
+                    "Pattern": "Bullish Gartley (222)",
+                    "Entry": round(entry, 2),
+                    "Stop Loss": round(stop_loss, 2),
+                    "Target": round(target, 2),
+                    "Risk_Reward": f"1:{abs(target - entry) / abs(entry - stop_loss):.2f}",
+                    "Confidence": "High" if 0.612 <= retrace_AB <= 0.624 else "Medium",
+                })
+            # Bearish Gartley: X=High, A=Low, B=High, C=Low, D=High
+            if X[2] == 'H' and A[2] == 'L' and 0.618 - 0.02 <= retrace_AB <= 0.618 + 0.02:
+                entry = D[1]
+                stop_loss = entry * 1.02
+                target = A[1]
+                patterns.append({
+                    "Pattern": "Bearish Gartley (222)",
+                    "Entry": round(entry, 2),
+                    "Stop Loss": round(stop_loss, 2),
+                    "Target": round(target, 2),
+                    "Risk_Reward": f"1:{abs(entry - target) / abs(stop_loss - entry):.2f}",
+                    "Confidence": "High" if 0.612 <= retrace_AB <= 0.624 else "Medium",
+                })
+        
+        # --- Butterfly --- (B retracement of XA = 0.786)
+        if 0.382 <= retrace_BC <= 0.886:
+            if X[2] == 'L' and A[2] == 'H' and 0.786 - 0.03 <= retrace_AB <= 0.786 + 0.03:
+                entry = D[1]
+                stop_loss = entry * 0.97
+                target = A[1]
+                patterns.append({
+                    "Pattern": "Bullish Butterfly",
+                    "Entry": round(entry, 2),
+                    "Stop Loss": round(stop_loss, 2),
+                    "Target": round(target, 2),
+                    "Risk_Reward": f"1:{abs(target - entry) / abs(entry - stop_loss):.2f}",
+                    "Confidence": "Medium",
+                })
+            if X[2] == 'H' and A[2] == 'L' and 0.786 - 0.03 <= retrace_AB <= 0.786 + 0.03:
+                entry = D[1]
+                stop_loss = entry * 1.03
+                target = A[1]
+                patterns.append({
+                    "Pattern": "Bearish Butterfly",
+                    "Entry": round(entry, 2),
+                    "Stop Loss": round(stop_loss, 2),
+                    "Target": round(target, 2),
+                    "Risk_Reward": f"1:{abs(entry - target) / abs(stop_loss - entry):.2f}",
+                    "Confidence": "Medium",
+                })
+        
+        # --- Bat --- (B retracement of XA = 0.382 to 0.500)
+        if 0.382 <= retrace_BC <= 0.886:
+            if X[2] == 'L' and A[2] == 'H' and 0.382 - 0.02 <= retrace_AB <= 0.500 + 0.02:
+                entry = D[1]
+                stop_loss = entry * 0.97
+                target = A[1]
+                patterns.append({
+                    "Pattern": "Bullish Bat",
+                    "Entry": round(entry, 2),
+                    "Stop Loss": round(stop_loss, 2),
+                    "Target": round(target, 2),
+                    "Risk_Reward": f"1:{abs(target - entry) / abs(entry - stop_loss):.2f}",
+                    "Confidence": "Medium",
+                })
+            if X[2] == 'H' and A[2] == 'L' and 0.382 - 0.02 <= retrace_AB <= 0.500 + 0.02:
+                entry = D[1]
+                stop_loss = entry * 1.03
+                target = A[1]
+                patterns.append({
+                    "Pattern": "Bearish Bat",
+                    "Entry": round(entry, 2),
+                    "Stop Loss": round(stop_loss, 2),
+                    "Target": round(target, 2),
+                    "Risk_Reward": f"1:{abs(entry - target) / abs(stop_loss - entry):.2f}",
+                    "Confidence": "Medium",
+                })
+        
+        # --- Crab --- (B retracement of XA = 0.382 to 0.618)
+        if 0.382 <= retrace_BC <= 0.886:
+            if X[2] == 'L' and A[2] == 'H' and 0.382 - 0.02 <= retrace_AB <= 0.618 + 0.02:
+                if 2.618 - 0.15 <= retrace_CD <= 2.618 + 0.15:
+                    entry = D[1]
+                    stop_loss = entry * 0.95
+                    target = A[1]
+                    patterns.append({
+                        "Pattern": "Bullish Crab",
+                        "Entry": round(entry, 2),
+                        "Stop Loss": round(stop_loss, 2),
+                        "Target": round(target, 2),
+                        "Risk_Reward": f"1:{abs(target - entry) / abs(entry - stop_loss):.2f}",
+                        "Confidence": "High",
+                    })
+            if X[2] == 'H' and A[2] == 'L' and 0.382 - 0.02 <= retrace_AB <= 0.618 + 0.02:
+                if 2.618 - 0.15 <= retrace_CD <= 2.618 + 0.15:
+                    entry = D[1]
+                    stop_loss = entry * 1.05
+                    target = A[1]
+                    patterns.append({
+                        "Pattern": "Bearish Crab",
+                        "Entry": round(entry, 2),
+                        "Stop Loss": round(stop_loss, 2),
+                        "Target": round(target, 2),
+                        "Risk_Reward": f"1:{abs(entry - target) / abs(stop_loss - entry):.2f}",
+                        "Confidence": "High",
+                    })
+    
+    # Return the best (highest confidence) pattern found
+    if patterns:
+        # Higher confidence first
+        priority = {"High": 3, "Medium": 2, "Low": 1}
+        patterns.sort(key=lambda p: priority.get(p["Confidence"], 0), reverse=True)
+        best = patterns[0]
+        
+        # Determine direction
+        direction = "BUY" if "Bullish" in best["Pattern"] else "SELL-BUY"
+        sentiment = "Positive" if direction == "BUY" else "Negative"
+        
+        # Add as terminal card output
+        return {
+            "Ticker": None,  # Filled in by caller
+            "Strategy": f"Harmony: {best['Pattern']}",
+            "Price": best["Entry"],
+            "Entry Range": f"{round(best['Entry'] * 0.995, 2)} - {round(best['Entry'] * 1.005, 2)}",
+            "Stop Loss": best["Stop Loss"],
+            "Target": best["Target"],
+            "Risk_Reward": best["Risk_Reward"],
+            "Sentiment": sentiment,
+            "Type": direction,
+            "Reason": f"{best['Pattern']} detected with {best['Confidence']} confidence",
+        }
+    
     return None
