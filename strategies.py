@@ -132,6 +132,16 @@ def _cond_adx_trend_strength(df: pd.DataFrame, i: int) -> bool:
 
 
 def _cond_high_conviction(df: pd.DataFrame, i: int) -> bool:
+    """High-probability pullback setup aligned with the long-term uptrend.
+
+    Design note — the sl_mult (1.8) intentionally exceeds tgt_mult (1.2),
+    giving a printed R:R of 1:0.67.  This is deliberate: the wide ATR stop
+    is sized to survive normal intra-day volatility without being stopped out
+    before the move develops.  The setup is used selectively (multi-factor
+    filter) and the expectancy comes from a very high trigger-to-win rate, not
+    from a wide profit target.  Callers using this signal for sizing should
+    treat it as a 'quality over quantity' filter rather than a raw R:R play.
+    """
     r, p = df.iloc[i], df.iloc[i - 1]
     trend_ok = r['Close'] > r['EMA20'] and r['EMA20'] > r['EMA50'] > r['EMA200']
     pullback_ok = (r['Low'] <= r['EMA20'] * 1.01) or (35 <= r['RSI'] <= 48)

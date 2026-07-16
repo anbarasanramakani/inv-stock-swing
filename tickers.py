@@ -221,20 +221,15 @@ def get_all_nse_tickers() -> list[str]:
 
     try:
         print("Downloading EQUITY_L to fetch all NSE stocks...")
-        resp = requests.get(
-            "https://archives.nseindia.com/content/equities/EQUITY_L.csv",
-            headers=_NSE_HEADERS, timeout=15
-        )
-        if resp.status_code == 200:
-            df = pd.read_csv(StringIO(resp.text))
-            if 'SYMBOL' in df.columns and ' SERIES' in df.columns:
-                eq_syms = (
-                    df[df[' SERIES'].str.strip() == 'EQ']['SYMBOL']
-                    .dropna().astype(str).str.strip().tolist()
-                )
-                for sym in eq_syms:
-                    if sym and sym not in unique_symbols:
-                        unique_symbols.append(sym)
+        df = _download_csv("https://archives.nseindia.com/content/equities/EQUITY_L.csv")
+        if df is not None and 'SYMBOL' in df.columns and ' SERIES' in df.columns:
+            eq_syms = (
+                df[df[' SERIES'].str.strip() == 'EQ']['SYMBOL']
+                .dropna().astype(str).str.strip().tolist()
+            )
+            for sym in eq_syms:
+                if sym and sym not in unique_symbols:
+                    unique_symbols.append(sym)
     except Exception as e:
         print(f"Error downloading all NSE symbols: {e}")
 

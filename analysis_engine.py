@@ -71,11 +71,15 @@ async def chunk_analysis_engine(
 
                 # Run screener matching rules
                 res = scr.run_screener_on_data(ticker, df_with_indicators, strategy)
-                
-                # Fetch live LTP quote
-                symbol_clean = ticker.replace(".NS", "")
-                ltp = await asyncio.to_thread(dp.get_live_ltp, symbol_clean)
-                if ltp is None:
+
+                # Fetch live LTP quote only for triggered signals—not for every HOLD ticker
+                # (saves N extra network requests per analysis run where N = non-triggering tickers)
+                if res and float(res.get('Vol_Ratio', 0)) >= min_vol_ratio:
+                    symbol_clean = ticker.replace(".NS", "")
+                    ltp = await asyncio.to_thread(dp.get_live_ltp, symbol_clean)
+                    if ltp is None:
+                        ltp = last_price
+                else:
                     ltp = last_price
 
                 pclose = float(df_with_indicators['Close'].iloc[-2]) if len(df_with_indicators) > 1 else last_price

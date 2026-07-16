@@ -14,9 +14,13 @@ import time
 import sys
 import json
 import os
+from pathlib import Path
 
 # Must run from project directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+_PROJECT_DIR = Path(__file__).parent
+_NEWS_CACHE_FILE = _PROJECT_DIR / "news_cache.json"
 
 import data_provider as dp
 import screeners as scr
@@ -34,9 +38,9 @@ def run_full_scheduled_analysis():
     
     # Load existing news cache
     existing_news_list = []
-    if os.path.exists("news_cache.json"):
+    if _NEWS_CACHE_FILE.exists():
         try:
-            with open("news_cache.json", "r", encoding="utf-8") as f:
+            with open(_NEWS_CACHE_FILE, "r", encoding="utf-8") as f:
                 existing_news_list = json.load(f)
         except Exception:
             pass
@@ -124,14 +128,14 @@ def run_full_scheduled_analysis():
     # Persist news cache
     try:
         existing_map = {}
-        if os.path.exists("news_cache.json"):
-            with open("news_cache.json", "r", encoding="utf-8") as f:
+        if _NEWS_CACHE_FILE.exists():
+            with open(_NEWS_CACHE_FILE, "r", encoding="utf-8") as f:
                 for item in json.load(f):
                     existing_map[item.get("Headline", "")] = item
         for p in news_picks:
             existing_map[p.get("Headline", "")] = p
         merged = list(existing_map.values())
-        with open("news_cache.json", "w", encoding="utf-8") as f:
+        with open(_NEWS_CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(merged, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"Error saving news cache: {e}")

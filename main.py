@@ -1,4 +1,5 @@
 import json
+import datetime
 from typing import Optional
 
 import uvicorn
@@ -19,11 +20,13 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Enable CORS for all domains to support microservice communication
+# Enable CORS for all origins (public read-only API — no auth cookies used).
+# NOTE: allow_credentials=True is intentionally omitted; combining it with
+# allow_origins=["*"] is forbidden by the CORS spec and rejected by browsers.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -93,7 +96,6 @@ async def trigger_full_analysis(
     Runs asynchronously in the background.
     """
     if check_schedule:
-        import datetime
         now = datetime.datetime.now()
         ist_hour, ist_min = now.hour, now.minute
         target_times = [(9, 20), (15, 30)]

@@ -37,16 +37,31 @@ _NSE_HEADERS = {
 }
 
 
+_NSE_SESSION_TTL = 300  # seconds — reuse the same TCP session for up to 5 minutes
+_nse_session_cache: dict = {"session": None, "ts": 0.0}
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
     retry=retry_if_exception_type((requests.RequestException, ConnectionError))
 )
 def _get_nse_session() -> requests.Session:
-    """Returns a requests.Session seeded with NSE cookies with retry logic."""
+    """Returns a requests.Session seeded with NSE cookies.
+
+    The session is reused for up to ``_NSE_SESSION_TTL`` seconds to avoid
+    creating a new TCP handshake + cookie exchange on every caller. If the
+    cached session is expired or absent a fresh one is created.
+    """
+    now = time.time()
+    cached = _nse_session_cache
+    if cached["session"] is not None and (now - cached["ts"]) < _NSE_SESSION_TTL:
+        return cached["session"]
     session = requests.Session()
     session.headers.update(_NSE_HEADERS)
     session.get("https://www.nseindia.com", timeout=2.5)
+    cached["session"] = session
+    cached["ts"] = now
     return session
 
 

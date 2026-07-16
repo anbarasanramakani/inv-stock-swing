@@ -11,7 +11,9 @@ import pandas as pd
 from typing import List
 
 
-HISTORY_CACHE_FILE = "analysis_history_cache.json"
+from pathlib import Path
+
+HISTORY_CACHE_FILE = str(Path(__file__).parent / "analysis_history_cache.json")
 
 
 # ---------------------------------------------------------------------------

@@ -174,6 +174,32 @@ def run_intraday_screener(ticker: str, df_history: pd.DataFrame) -> list:
 # 10-Day Intraday Backtesting
 # ---------------------------------------------------------------------------
 
+def _evaluate_exit(
+    day_high: float,
+    day_low: float,
+    day_close: float,
+    sl: float,
+    target: float,
+    is_short: bool,
+) -> tuple[str, float]:
+    """Return (status, exit_price) for one intraday bar given SL/target levels.
+
+    For long trades (``is_short=False``) the stop-loss sits *below* entry and
+    the target *above*.  For short trades the directions are reversed.
+    Stop-loss takes priority over target (conservative simulation).
+    """
+    if is_short:
+        if day_high >= sl:
+            return "Stop Loss Hit", sl
+        if day_low <= target:
+            return "Target Hit", target
+    else:
+        if day_low <= sl:
+            return "Stop Loss Hit", sl
+        if day_high >= target:
+            return "Target Hit", target
+    return "Time Exit", day_close
+
 def backtest_intraday_10days(ticker: str, df_history: pd.DataFrame) -> list:
     """
     Simulates intraday trades triggered over the last 10 trading days.
@@ -212,33 +238,9 @@ def backtest_intraday_10days(ticker: str, df_history: pd.DataFrame) -> list:
             day_high = df['High'].iloc[check_idx]
             day_low = df['Low'].iloc[check_idx]
             day_close = df['Close'].iloc[check_idx]
-            
-            if is_short:
-                if day_high >= sl:
-                    status = "Stop Loss Hit"
-                    exit_price = sl
-                    exit_idx = check_idx
-                elif day_low <= target:
-                    status = "Target Hit"
-                    exit_price = target
-                    exit_idx = check_idx
-                else:
-                    status = "Time Exit"
-                    exit_price = day_close
-                    exit_idx = check_idx
-            else:
-                if day_low <= sl:
-                    status = "Stop Loss Hit"
-                    exit_price = sl
-                    exit_idx = check_idx
-                elif day_high >= target:
-                    status = "Target Hit"
-                    exit_price = target
-                    exit_idx = check_idx
-                else:
-                    status = "Time Exit"
-                    exit_price = day_close
-                    exit_idx = check_idx
+
+            status, exit_price = _evaluate_exit(day_high, day_low, day_close, sl, target, is_short)
+            exit_idx = check_idx
                     
             pnl_pct = ((exit_price - entry_price) / entry_price) * 100
             if is_short:

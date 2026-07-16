@@ -177,7 +177,7 @@ class InitialMarketNewsService:
             if related:
                 category = NewsCategory.STOCK
             else:
-                sector_keywords = ["bank nifty", "nifty it", "metal", "auto", "sector", "pharma", "realty", "fmcc"]
+                sector_keywords = ["bank nifty", "nifty it", "metal", "auto", "sector", "pharma", "realty", "fmcg"]
                 if any(k in title_lower for k in sector_keywords):
                     category = NewsCategory.SECTOR
 

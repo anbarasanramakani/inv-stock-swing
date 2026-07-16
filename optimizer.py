@@ -20,13 +20,15 @@ import strategies as strat
 
 
 class NumpyEncoder(json.JSONEncoder):
-    """JSON encoder that understands numpy scalars and pandas/py datetimes."""
+    """JSON encoder that understands numpy scalars, arrays, and pandas/py datetimes."""
 
     def default(self, obj):
         if isinstance(obj, (np.integer,)):
             return int(obj)
         if isinstance(obj, (np.floating,)):
             return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
         if isinstance(obj, (pd.Timestamp, datetime.date, datetime.datetime)):
             return obj.isoformat()
         return super().default(obj)

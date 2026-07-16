@@ -8,7 +8,19 @@ import numpy as np
 import plotly.graph_objects as go
 import threading
 from plotly.subplots import make_subplots
-import datetime, os, time, json
+import datetime
+import os
+import time
+import json
+
+# Optional live-price dependency — imported once at module level so it is NOT
+# re-executed inside the hot LTP loop on every ticker query.
+try:
+    from nsepython import nse_quote_ltp as _nse_quote_ltp
+    _HAS_NSEPYTHON = True
+except ImportError:
+    _nse_quote_ltp = None
+    _HAS_NSEPYTHON = False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -481,7 +493,6 @@ div[data-testid="stProgressBar"] > div > div {
 # ─────────────────────────────────────────────────────────────────────────────
 # Module imports
 # ─────────────────────────────────────────────────────────────────────────────
-import importlib
 import tickers      as tick_helper
 import data_provider as dp
 import screeners    as scr
@@ -492,14 +503,11 @@ import intraday_screener as intra
 import analysis_history as hist
 import ipo_provider as ipo
 
-importlib.reload(tick_helper)
-importlib.reload(dp)
-importlib.reload(scr)
-importlib.reload(inst)
-importlib.reload(news_helper)
-importlib.reload(opt)
-importlib.reload(intra)
-importlib.reload(hist)
+# NOTE: importlib.reload() calls were intentionally removed.
+# Reloading modules on every Streamlit re-run destroys the in-process
+# _IND_CACHE memoization in screeners.py, forcing the expensive Supertrend
+# loop to recompute from scratch on every user interaction.  Streamlit's
+# own module caching makes explicit reloads both unnecessary and harmful.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Scheduled Analysis Trigger (for UptimeRobot / external cron)
@@ -518,48 +526,73 @@ except Exception:
 # ─────────────────────────────────────────────────────────────────────────────
 # Session state init
 # ─────────────────────────────────────────────────────────────────────────────
-_SS_KEYS = ["screener_results", "past_signals_results", "news_picks",
-            "news_past_results", "medium_term_picks", "data_cache",
-            "screened_universe", "screened_strategy", "ltp_cache",
-            "last_run_time", "last_sync_time", "last_sync_timestamp", "opt_leaderboard",
-            "last_news_scrape_timestamp", "intraday_picks", "intraday_backtest",
-            "is_analyzing", "analysis_universe", "analysis_index",
-            "accumulated_matching", "accumulated_past_sigs", "accumulated_medium_term",
-            "accumulated_intraday_picks", "accumulated_intraday_backtest",
-            "accumulated_data_cache", "accumulated_ltp_cache", "bulk_deals_cached",
-            "brokers_picks", "initial_news_loaded"]
-for k in _SS_KEYS:
+# _SS_DEFAULTS maps every key to its cold-start default.  None means "set to
+# None"; special sentinel values are handled just below the dict definition.
+_SS_DEFAULTS: dict = {
+    # --- Analysis state ---
+    "screener_results":           None,
+    "past_signals_results":       None,
+    "medium_term_picks":          None,
+    "intraday_picks":             None,
+    "intraday_backtest":          None,
+    "data_cache":                 None,
+    "ltp_cache":                  None,
+    "screened_universe":          None,
+    "screened_strategy":          None,
+    "opt_leaderboard":            None,
+    "bulk_deals_cached":          None,
+    "last_run_time":              None,
+    "last_sync_time":             None,
+    # --- Progress tracking (previously missing — caused AttributeError) ---
+    "analysis_universe":          [],
+    "analysis_index":             0,
+    "analysis_batch":             0,
+    "analysis_total_batches":     0,
+    "analysis_status":            "Ready",
+    "analysis_mode":              None,
+    # --- Accumulated batch state ---
+    "accumulated_matching":       [],
+    "accumulated_past_sigs":      [],
+    "accumulated_medium_term":    [],
+    "accumulated_intraday_picks": [],
+    "accumulated_intraday_backtest": [],
+    "accumulated_data_cache":     {},
+    "accumulated_ltp_cache":      {},
+    # --- Flags ---
+    "is_analyzing":               False,
+    "initial_news_loaded":        None,
+    # --- Timestamps (float) ---
+    "last_sync_timestamp":        0.0,
+    "last_news_scrape_timestamp": 0.0,
+    # --- DataFrame keys with special cache-loading init (handled below) ---
+    "news_picks":                 None,  # overwritten below
+    "news_past_results":          None,
+    "brokers_picks":              None,  # overwritten below
+}
+
+_PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def _load_json_cache_as_df(filename: str) -> pd.DataFrame:
+    """Load a JSON cache file from the project directory as a DataFrame."""
+    path = os.path.join(_PROJECT_DIR, filename)
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return pd.DataFrame(data) if data else pd.DataFrame()
+        except Exception as e:
+            print(f"Error loading {filename}: {e}")
+    return pd.DataFrame()
+
+for k, default in _SS_DEFAULTS.items():
     if k not in st.session_state:
-        if k in ["last_sync_timestamp", "last_news_scrape_timestamp"]:
-            st.session_state[k] = 0.0
-        elif k in ["is_analyzing"]:
-            st.session_state[k] = False
-        elif k == "news_picks":
-            cache_file = "news_cache.json"
-            if os.path.exists(cache_file):
-                try:
-                    with open(cache_file, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        st.session_state[k] = pd.DataFrame(data) if data else pd.DataFrame()
-                except Exception as e:
-                    print(f"Error loading news cache: {e}")
-                    st.session_state[k] = pd.DataFrame()
-            else:
-                st.session_state[k] = pd.DataFrame()
-        elif k == "brokers_picks":
-            cache_file = "brokers_cache.json"
-            if os.path.exists(cache_file):
-                try:
-                    with open(cache_file, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        st.session_state[k] = pd.DataFrame(data) if data else pd.DataFrame()
-                except Exception as e:
-                    print(f"Error loading brokers cache: {e}")
-                    st.session_state[k] = pd.DataFrame()
-            else:
-                st.session_state[k] = pd.DataFrame()
-        else:
-            st.session_state[k] = None
+        st.session_state[k] = default
+
+# Special init for DataFrame keys that are preloaded from disk on cold start
+if st.session_state.news_picks is None:
+    st.session_state.news_picks = _load_json_cache_as_df("news_cache.json")
+if st.session_state.brokers_picks is None:
+    st.session_state.brokers_picks = _load_json_cache_as_df("brokers_cache.json")
 
 if "_analysis_worker_state" not in st.session_state:
     st.session_state["_analysis_worker_state"] = {}
@@ -789,23 +822,24 @@ def _get_ltp_cache(tickers: list, data_cache: dict) -> dict:
     """
     if not tickers:
         return {}
-    
+
     ltp_map = {}
     failed_tickers = []
-    
-    # 1. Try nsepython (instant during market hours)
+
+    # 1. Try nsepython (instant during market hours).
+    # _nse_quote_ltp is imported once at module level — not per-ticker.
     for ticker in tickers:
         sym = ticker.replace(".NS", "")
         try:
-            from nsepython import nse_quote_ltp
-            ltp = nse_quote_ltp(sym, series="EQ")
-            if ltp and float(ltp) > 0:
-                ltp_map[ticker] = float(ltp)
-                continue
+            if _HAS_NSEPYTHON:
+                ltp = _nse_quote_ltp(sym, series="EQ")
+                if ltp and float(ltp) > 0:
+                    ltp_map[ticker] = float(ltp)
+                    continue
         except Exception:
             pass
         failed_tickers.append(ticker)
-        
+
     # 2. Try single batch yfinance download for failed tickers (takes <1s for all tickers combined)
     if failed_tickers:
         try:
@@ -828,7 +862,7 @@ def _get_ltp_cache(tickers: list, data_cache: dict) -> dict:
                         ltp_map[failed_tickers[0]] = float(close_col.iloc[-1])
         except Exception:
             pass
-            
+
     # 3. Fallback to cached daily Close price
     for ticker in tickers:
         if ticker not in ltp_map or ltp_map[ticker] <= 0:
@@ -836,8 +870,40 @@ def _get_ltp_cache(tickers: list, data_cache: dict) -> dict:
                 ltp_map[ticker] = float(data_cache[ticker]['Close'].iloc[-1])
             else:
                 ltp_map[ticker] = 0.0
-                
+
     return ltp_map
+
+
+def _persist_news_cache(new_items: list, cache_file: str = "news_cache.json", prune_days: int = 30) -> None:
+    """Merge ``new_items`` into the on-disk JSON news cache and optionally prune old entries.
+
+    Previously this identical 10-line pattern was copy-pasted in three places:
+    the background worker, the 'Load Full News' button handler, and the startup
+    block.  Centralising it here means any future change to cache format or
+    pruning logic only needs one edit.
+    """
+    cache_path = os.path.join(_PROJECT_DIR, cache_file)
+    try:
+        existing_map: dict = {}
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "r", encoding="utf-8") as _f:
+                    for _item in json.load(_f):
+                        existing_map[_item.get("Headline", "")] = _item
+            except Exception:
+                pass
+        for _p in new_items:
+            existing_map[_p.get("Headline", "")] = _p
+        merged = list(existing_map.values())
+        # Optional time-based pruning via news_helper utility
+        try:
+            merged = news_helper.prune_cache_by_days(merged, days=prune_days, date_key="Date")
+        except Exception:
+            pass
+        with open(cache_path, "w", encoding="utf-8") as _f:
+            json.dump(merged, _f, indent=2, ensure_ascii=False)
+    except Exception as _ce:
+        print(f"Error persisting {cache_file}: {_ce}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # UI helpers
@@ -1167,26 +1233,10 @@ def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, sta
             pass
 
         # Persist merged news cache so future runs reuse previous results (preserve entire history)
-        try:
-            existing_map = {}
-            if os.path.exists("news_cache.json"):
-                try:
-                    with open("news_cache.json", "r", encoding="utf-8") as _f:
-                        for _item in json.load(_f):
-                            existing_map[_item.get("Headline", "")] = _item
-                except Exception:
-                    existing_map = {}
-            for _p in state["news_picks"]:
-                existing_map[_p.get("Headline", "")] = _p
-            merged_all = list(existing_map.values())
-            with open("news_cache.json", "w", encoding="utf-8") as _f:
-                json.dump(merged_all, _f, indent=2, ensure_ascii=False)
-        except Exception as _cache_err:
-            print(f"Error persisting news cache after background analysis: {_cache_err}")
+        _persist_news_cache(state["news_picks"])
 
         # Save analysis history for persistence and validation
         try:
-            import analysis_history as hist
             history_cache = hist.load_history_cache()
             
             # Collect all picks from this run
@@ -1442,7 +1492,6 @@ if load_news_btn:
             
             data_cache_for_news = {}
             if news_tickers:
-                import data_provider as dp
                 # Try loading from existing session data_cache first
                 if st.session_state.data_cache:
                     for t in news_tickers:
@@ -1459,11 +1508,11 @@ if load_news_btn:
                         print(f"Error fetching batch data for news: {batch_err}")
             
             # Load existing picks from cache for delta computation
-            import json, os
             existing_news_list = []
-            if os.path.exists("news_cache.json"):
+            news_cache_path = os.path.join(_PROJECT_DIR, "news_cache.json")
+            if os.path.exists(news_cache_path):
                 try:
-                    with open("news_cache.json", "r", encoding="utf-8") as f:
+                    with open(news_cache_path, "r", encoding="utf-8") as f:
                         existing_news_list = json.load(f)
                 except Exception:
                     pass
@@ -1479,28 +1528,10 @@ if load_news_btn:
             
             # Update session state with full recommendations (has Price/SL/Target/Type)
             st.session_state.news_picks = pd.DataFrame(news_with_recs) if news_with_recs else pd.DataFrame()
-            
+
             # Save to cache (merge with full recommendation data)
-            try:
-                existing_map = {}
-                if os.path.exists("news_cache.json"):
-                    with open("news_cache.json", "r", encoding="utf-8") as _f:
-                        for _item in json.load(_f):
-                            existing_map[_item.get("Headline", "")] = _item
-                
-                for _p in news_with_recs:
-                    existing_map[_p.get("Headline", "")] = _p
-                
-                merged = list(existing_map.values())
-                try:
-                    merged = news_helper.prune_cache_by_days(merged, days=30, date_key='Date')
-                except Exception:
-                    pass
-                with open("news_cache.json", "w", encoding="utf-8") as _f:
-                    json.dump(merged, _f, indent=2, ensure_ascii=False)
-            except Exception as cache_err:
-                print(f"Cache save error: {cache_err}")
-            
+            _persist_news_cache(news_with_recs)
+
             status.update(label=f"✅ Loaded {len(news_with_recs)} news items with trade recommendations", state="complete", expanded=False)
         
         st.toast(f"📰 Loaded {len(news_with_recs)} news items with trade levels", icon="📰")
@@ -1674,26 +1705,9 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                         pass
                 latest_news = news_helper.get_today_news_recommendations(st.session_state.data_cache, all_symbols=all_nse_symbols, existing_picks=existing_news_list)
                 st.session_state.news_picks = pd.DataFrame(latest_news) if latest_news else pd.DataFrame()
-                
+
                 # Save background news (MERGE to preserve earlier news from the day)
-                try:
-                    existing_map = {}
-                    if os.path.exists("news_cache.json"):
-                        with open("news_cache.json", "r", encoding="utf-8") as _f:
-                            for _item in json.load(_f):
-                                existing_map[_item.get("Headline", "")] = _item
-                    for _p in latest_news:
-                        existing_map[_p.get("Headline", "")] = _p
-                    # Preserve full history when saving background updates
-                    merged = list(existing_map.values())
-                    try:
-                        merged = news_helper.prune_cache_by_days(merged, days=30, date_key='Date')
-                    except Exception:
-                        pass
-                    with open("news_cache.json", "w", encoding="utf-8") as _f:
-                        json.dump(merged, _f, indent=2, ensure_ascii=False)
-                except Exception as e:
-                    print(f"Error saving background news to local cache: {e}")
+                _persist_news_cache(latest_news)
                     
                 st.session_state.last_news_scrape_timestamp = current_time
             except Exception as e:
