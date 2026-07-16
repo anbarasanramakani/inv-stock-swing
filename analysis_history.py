@@ -192,6 +192,9 @@ def add_run_to_history(
         })
         run_entry["picks"].append(entry)
 
+    # Enforce only 1 entry per day constraint (remove any existing run with the same date)
+    cache["runs"] = [r for r in cache.get("runs", []) if r.get("date") != date_str]
+
     cache["runs"].insert(0, run_entry)
     cache["last_run_date"] = date_str
     cache["last_run_timestamp"] = time.time()

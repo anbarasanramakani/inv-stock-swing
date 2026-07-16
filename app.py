@@ -844,7 +844,7 @@ def _get_ltp_cache(tickers: list, data_cache: dict) -> dict:
     if failed_tickers:
         try:
             import yfinance as yf
-            data = yf.download(tickers=failed_tickers, period="1d", interval="1m", auto_adjust=True, progress=False)
+            data = yf.download(tickers=failed_tickers, period="1d", interval="1m", auto_adjust=True, progress=False, threads=False)
             if not data.empty:
                 if isinstance(data.columns, pd.MultiIndex):
                     for t in failed_tickers:

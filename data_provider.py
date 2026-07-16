@@ -236,7 +236,7 @@ def download_stock_data_batch(tickers: list, period: str = "1y") -> dict:
     if tickers_to_fetch_full:
         try:
             print(f"Downloading full history for {len(tickers_to_fetch_full)} tickers...")
-            data_full = yf.download(tickers=tickers_to_fetch_full, period=period, auto_adjust=True, progress=False, threads=True)
+            data_full = yf.download(tickers=tickers_to_fetch_full, period=period, auto_adjust=True, progress=False, threads=False)
             if not data_full.empty:
                 if isinstance(data_full.columns, pd.MultiIndex):
                     avail = data_full.columns.get_level_values(1).unique().tolist()
@@ -261,7 +261,7 @@ def download_stock_data_batch(tickers: list, period: str = "1y") -> dict:
     for start_date, inc_tickers in tickers_to_fetch_incremental.items():
         try:
             print(f"Downloading incremental data ({start_date} to today) for {len(inc_tickers)} tickers...")
-            data_inc = yf.download(tickers=inc_tickers, start=start_date, end=tomorrow, auto_adjust=True, progress=False, threads=True)
+            data_inc = yf.download(tickers=inc_tickers, start=start_date, end=tomorrow, auto_adjust=True, progress=False, threads=False)
             if not data_inc.empty:
                 if isinstance(data_inc.columns, pd.MultiIndex):
                     avail = data_inc.columns.get_level_values(1).unique().tolist()
@@ -314,7 +314,7 @@ def get_single_stock_data(ticker: str, period: str = "1y") -> pd.DataFrame | Non
         try:
             start_date = last_date.strftime("%Y-%m-%d")
             tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-            data_new = yf.download(ticker, start=start_date, end=tomorrow, auto_adjust=True, progress=False)
+            data_new = yf.download(ticker, start=start_date, end=tomorrow, auto_adjust=True, progress=False, threads=False)
             df_new = _flatten_and_clean(data_new, min_rows=1)
             
             if df_new is not None and not df_new.empty:
@@ -329,7 +329,7 @@ def get_single_stock_data(ticker: str, period: str = "1y") -> pd.DataFrame | Non
             return df_cached
             
     try:
-        data = yf.download(ticker, period=period, auto_adjust=True, progress=False)
+        data = yf.download(ticker, period=period, auto_adjust=True, progress=False, threads=False)
         df_fresh = _flatten_and_clean(data, min_rows=2)
         if df_fresh is not None:
             _save_cached_ticker(ticker, df_fresh)
