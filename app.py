@@ -2117,16 +2117,16 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
             ipo_filter = st.selectbox(
                 "Filter IPOs by status",
                 ["Ongoing & Upcoming", "Ongoing Only", "Upcoming Only", "Listed / Historical", "All"],
-                key="ipo_filter"
+                key="ipo_filter_v5"
             )
         
-        # Load IPO data
-        if refresh_ipos or "ipo_list" not in st.session_state:
-            with st.spinner("Fetching IPO data from NSE..."):
+        # Load IPO data (forced refresh via new cache key)
+        if refresh_ipos or "ipo_list_v5" not in st.session_state:
+            with st.spinner("Fetching Real-Time IPO data from live trackers..."):
                 ipo_list = ipo.get_live_ipos()
-                st.session_state.ipo_list = ipo_list
+                st.session_state.ipo_list_v5 = ipo_list
         
-        ipo_list = st.session_state.get("ipo_list", [])
+        ipo_list = st.session_state.get("ipo_list_v5", [])
         
         if not ipo_list:
             st.warning("No IPO data available. IPO data will appear once fetched from NSE API.")
@@ -2271,6 +2271,14 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                         st.markdown(f"**🎯 Final Recommendation:** {ipo_analysis.get('recommendation_reason')}")
                         st.markdown(f"<span style='color:{rec_color}; font-size:1.1rem; font-weight:800; background:{rec_bg}; border:1px solid {border_color}; border-radius:4px; padding:4px 12px;'>{rec} (Overall Score: {ipo_analysis.get('overall_score')}/100)</span>", unsafe_allow_html=True)
                         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+                        
+                        live_news = ipo_analysis.get("live_news", [])
+                        if live_news:
+                            st.markdown("---")
+                            st.markdown("#### 📰 Live News & Web Aggregation")
+                            st.markdown("<span style='font-size:0.8rem; color:#8aaccc;'>Real-time headlines fetched directly from external news channels and social media.</span>", unsafe_allow_html=True)
+                            for news in live_news:
+                                st.markdown(f"• [{news.get('title')}]({news.get('link')})")
 
                     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 

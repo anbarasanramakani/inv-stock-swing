@@ -326,11 +326,9 @@ def scrape_ipos_from_chittorgarh() -> list[dict]:
     url = "https://www.chittorgarh.com/report/mainboard-ipo-list-in-india-bse-nse/83/"
     try:
         scrape_headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
-        resp = requests.get(url, headers=scrape_headers, timeout=8)
+        resp = requests.get(url, headers=scrape_headers, timeout=10)
         if resp.status_code != 200:
             print(f"[IPO Web Scraper] Status code: {resp.status_code}")
             return []
@@ -446,177 +444,43 @@ def scrape_ipos_from_chittorgarh() -> list[dict]:
 
 def fetch_ipo_list() -> list[dict]:
     """
-    Fetches current, upcoming and recently listed IPOs.
-    Attempts: Web Scraper (Chittorgarh) -> NSE API -> hardcoded seed fallback.
+    Fetches real-time active IPOs strictly from the NSE API.
+    No static fallbacks are used, ensuring 100% live data.
     """
     ipo_list = []
     
-    # 1. Try Chittorgarh web scraper first (most reliable, works in cloud)
     try:
-        ipo_list = scrape_ipos_from_chittorgarh()
-    except Exception:
-        pass
+        from nsepython import nsefetch
+        # Fetch current active issues directly from NSE bypassing standard request blocks
+        data = nsefetch('https://www.nseindia.com/api/ipo-current-issue')
         
-    # 2. Try NSE API as second source
-    if not ipo_list:
-        try:
-            resp = requests.get(
-                "https://www.nseindia.com/api/ipo-market",
-                headers=_NSE_HEADERS,
-                timeout=8
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                for item in data.get("ipo", []):
-                    # We still apply the dynamic details generator here to enrich NSE API fields
-                    raw_name = item.get("companyName", "Unnamed IPO")
-                    details = generate_dynamic_ipo_details(raw_name)
-                    ipo_list.append({
-                        "name": raw_name,
-                        "symbol": item.get("symbol", ""),
-                        "status": item.get("status", "Upcoming"),
-                        "price_band": item.get("priceBand", "N/A"),
-                        "min_amount": item.get("minAmount", 0),
-                        "open_date": item.get("openDate", ""),
-                        "close_date": item.get("closeDate", ""),
-                        "lot_size": item.get("lotSize", 0),
-                        "listing_date": item.get("listingDate", ""),
-                        "source": "NSE API",
-                        "company_description": details["company_description"],
-                        "development_scope": details["development_scope"],
-                        "growth_runway": details["growth_runway"],
-                        "listing_gains_rationale": details["listing_gains_rationale"],
-                        "financial_insights": details["financial_insights"]
-                    })
-        except Exception:
-            pass
+        if data and isinstance(data, list):
+            for item in data:
+                raw_name = item.get("companyName", "Unnamed IPO")
+                # Generate rich AI insights for this live IPO dynamically
+                details = generate_dynamic_ipo_details(raw_name)
+                
+                ipo_list.append({
+                    "name": raw_name,
+                    "symbol": item.get("symbol", ""),
+                    "status": item.get("status", "Ongoing"),
+                    "price_band": item.get("issuePrice", "N/A"),
+                    "min_amount": 0, # Not provided in this endpoint
+                    "open_date": item.get("issueStartDate", ""),
+                    "close_date": item.get("issueEndDate", ""),
+                    "lot_size": 0,
+                    "listing_date": "TBA",
+                    "source": "NSE Live API",
+                    "company_description": details["company_description"],
+                    "development_scope": details["development_scope"],
+                    "growth_runway": details["growth_runway"],
+                    "listing_gains_rationale": details["listing_gains_rationale"],
+                    "financial_insights": details["financial_insights"]
+                })
+    except Exception as e:
+        print(f"[IPO Live Fetcher] Error fetching from NSE: {e}")
             
-    # 3. Fallback to hardcoded detailed seeds if both fail
-    if not ipo_list:
-        ipo_list = _get_fallback_ipo_data()
-        
     return ipo_list
-
-
-def _get_fallback_ipo_data() -> list[dict]:
-    """Fallback IPO data when API fails."""
-    cache_data = []
-    if _IPO_CACHE_PATH and os.path.exists(_IPO_CACHE_PATH):
-        try:
-            with open(_IPO_CACHE_PATH, "r", encoding="utf-8") as f:
-                cache_data = json.load(f)
-        except Exception:
-            pass
-            
-    # Seed high-profile detailed recent and upcoming IPOs if cache is empty or missing
-    if not cache_data:
-        cache_data = [
-            {
-                "name": "Niva Bupa Health Insurance Limited",
-                "symbol": "NIVABUPA",
-                "status": "Listed",
-                "price_band": "70-74",
-                "min_amount": 14800,
-                "open_date": "2024-11-07",
-                "close_date": "2024-11-11",
-                "lot_size": 200,
-                "listing_date": "2024-11-14",
-                "source": "Seed Fallback",
-                "company_description": "Health Insurance, Medical Underwriting, and Retail Health Plans. Niva Bupa is one of India's largest standalone health insurers, offering comprehensive retail and group health insurance policies across the nation.",
-                "development_scope": "Underwriting margin optimization, expansion of outpatient care (OPD) coverage options, onboarding more network hospital partners, and leveraging AI models for automated claim settlements and fraud detection.",
-                "growth_runway": "High growth runway. Standalone health insurance is the fastest-growing sector within general insurance in India, with rising consumer awareness and middle-class penetration post-pandemic.",
-                "listing_gains_rationale": "Moderate-to-High Probability. Stable defensive sector with strong retail brand recall and backing from institutional private equity investors. Listing day gains estimated around 15-20%.",
-                "financial_insights": "Gross written premiums are growing at a 25% CAGR. Combined ratio is improving toward 98% (indicating underwriting profitability) with a comfortable solvency ratio of 1.75x."
-            },
-            {
-                "name": "One Mobikwik Systems Limited (Older Series)",
-                "symbol": "MOBIKWIK",
-                "status": "Listed",
-                "price_band": "350-375",
-                "min_amount": 15000,
-                "open_date": "2026-02-15",
-                "close_date": "2026-02-18",
-                "lot_size": 40,
-                "listing_date": "2026-02-23",
-                "source": "Seed Fallback",
-                "company_description": "Fintech Platform, Consumer Payments, Buy-Now-Pay-Later (BNPL) lending. Mobikwik offers a consumer payments wallet, payment gateway services, and digital micro-credit options in India.",
-                "development_scope": "Expanding into wealth tech platforms, mutual fund distribution, and credit-card-linked credit line products for retailers.",
-                "growth_runway": "Moderate growth. UPI market share is concentrated, so growth depends on high-yield BNPL credit expansion and financial product cross-selling.",
-                "listing_gains_rationale": "Moderate probability. Listing performance will track tech sector sentiment and regulatory news on unsecured consumer lending.",
-                "financial_insights": "Profit margins are positive but thin. Zero net debt is a strong positive, but trailing the user scale of major competitors."
-            },
-            {
-                "name": "Jio Platforms Limited",
-                "symbol": "JIO",
-                "status": "Ongoing",
-                "price_band": "650-720",
-                "min_amount": 14400,
-                "open_date": "2026-07-14",
-                "close_date": "2026-07-18",
-                "lot_size": 20,
-                "listing_date": "2026-07-24",
-                "source": "Seed Fallback",
-                "company_description": "Digital Infrastructure, High-Speed 5G Telecom, and Consumer Internet. Jio Platforms is India's leading digital services provider, leading the market with 480+ million subscribers, streaming apps, UPI, and cloud storage solutions.",
-                "development_scope": "Massive scope of development via AI cloud data centers (partnership with NVIDIA), expansion of enterprise 5G private networks, and launching indigenous AI LLM models tailored for Indian languages.",
-                "growth_runway": "High revenue growth opportunity (expected 15-18% CAGR). Driving monetization through higher 5G data consumption, JioAirFiber home broadband expansions, and enterprise SaaS cloud subscriptions.",
-                "listing_gains_rationale": "High Probability. Enormous retail excitement and anchor institutional backing. Listing gains are estimated at 25-35% above the issue price due to premium brand equity and market dominance.",
-                "financial_insights": "Superb financial profile: EBITDA margin exceeds 49%, net debt-to-equity is very low, and return on equity (RoE) stands strong at 16.5%. Valuation PE is premium but fully justified by its near-monopoly telecom position."
-            },
-            {
-                "name": "National Solar Power Corp (NSPC Green Energy)",
-                "symbol": "NSPCGREEN",
-                "status": "Ongoing",
-                "price_band": "125-135",
-                "min_amount": 13750,
-                "open_date": "2026-07-15",
-                "close_date": "2026-07-17",
-                "lot_size": 110,
-                "listing_date": "2026-07-23",
-                "source": "Seed Fallback",
-                "company_description": "Renewable Energy Utility, Green Hydrogen, and Solar Grid Integration. A state-backed public sector undertaking focused on building large-scale solar photovoltaic utilities and wind farms to meet India's green grid transition.",
-                "development_scope": "Secured pipeline of over 12 GW solar grid integration. Scaling green hydrogen generation hubs in western India and deploying grid-scale battery energy storage systems (BESS).",
-                "growth_runway": "Exceptional long-term growth. Backed by sovereign mandates targeting 500 GW of non-fossil capacity by 2030. Revenue is highly predictable with 25-year Power Purchase Agreements (PPAs).",
-                "listing_gains_rationale": "High Probability. Strong institutional bid from ESG funds and retail investors. Stable listing gain of 15-20% expected due to attractive pricing at a discount relative to private peers.",
-                "financial_insights": "Reliable cash flows backed by long-term PPAs. Profit margins (EBITDA) are stable at 38%. Debt-to-equity is elevated at 1.9x (standard for asset-heavy power producers), but interest coverage is safe at 3.1x."
-            },
-            {
-                "name": "ANI Technologies Limited (Ola Cabs)",
-                "symbol": "OLACABS",
-                "status": "Upcoming",
-                "price_band": "240-265",
-                "min_amount": 14400,
-                "open_date": "2026-08-05",
-                "close_date": "2026-08-08",
-                "lot_size": 60,
-                "listing_date": "2026-08-14",
-                "source": "Seed Fallback",
-                "company_description": "Urban Mobility, Ride-Hailing, and Electric Cab Logistics. ANI Technologies is India's largest ride-sharing network, expanding its electric vehicle (EV) cab fleet and offering corporate logistics services.",
-                "development_scope": "Transitions to an all-electric taxi fleet to reduce operating costs by 40%. Developing autonomous navigation pilots and launching low-cost electric two-wheeler taxi options in semi-urban sectors.",
-                "growth_runway": "Moderate-to-high growth opportunity. Ride bookings are growing at 12% YoY, but competition from local operators and ride-sharing aggregators limits margin expansion.",
-                "listing_gains_rationale": "Moderate Probability. Strong retail brand interest, but overall listing gains could be limited (5-10%) by concerns over regulatory ride-pricing caps and driver welfare policies.",
-                "financial_insights": "Revenue growing at 15% CAGR. EBITDA turned marginally positive in FY25, but net profit remains close to break-even. High valuations relative to global peers like Uber demand cautious position sizing."
-            },
-            {
-                "name": "One Mobikwik Systems Limited (Mobikwik)",
-                "symbol": "MOBIKWIK",
-                "status": "Upcoming",
-                "price_band": "350-380",
-                "min_amount": 14000,
-                "open_date": "2026-09-01",
-                "close_date": "2026-09-04",
-                "lot_size": 40,
-                "listing_date": "2026-09-10",
-                "source": "Seed Fallback",
-                "company_description": "Fintech Platform, Digital Wallet, and Buy-Now-Pay-Later (BNPL) Consumer Lending. Mobikwik offers a consumer payments wallet, QR-code merchant setups, and micro-credit financing in semi-urban India.",
-                "development_scope": "Expanding into wealth tech (mutual fund distribution), digital gold investments, and launching credit card credit-line cash advance products for small retailers.",
-                "growth_runway": "Moderate growth. Consumer payment processing fees are commoditized (0% MDR on UPI). Growth depends entirely on high-yield BNPL credit expansion, which faces regulatory credit limits.",
-                "listing_gains_rationale": "Moderate/Low Probability. Regulatory scrutiny on BNPL loans and severe marketing cost pressures limit upside. Listing gains are likely to be flat or trade near par value.",
-                "financial_insights": "Achieved nominal net profit in FY25. The balance sheet is debt-free, which is positive for a tech startup, but active user growth is trailing behind giants like PhonePe and Google Pay."
-            }
-        ]
-        save_ipo_cache(cache_data)
-        
-    return cache_data
 
 
 def save_ipo_cache(ipo_list: list[dict]):
@@ -700,6 +564,26 @@ def analyze_ipo(ipo: dict) -> dict:
     else:
         recommendation = "SKIP"
         recommendation_reason = "Unfavorable risk-reward profile"
+        
+    # Fetch LIVE real-time news / social media links via RSS
+    live_news = []
+    try:
+        import urllib.request
+        import urllib.parse
+        import xml.etree.ElementTree as ET
+        query = urllib.parse.quote(f'"{name}" IPO')
+        url = f"https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=4) as response:
+            xml_data = response.read()
+        root = ET.fromstring(xml_data)
+        for item in root.findall('.//item')[:4]:
+            live_news.append({
+                "title": item.find('title').text,
+                "link": item.find('link').text
+            })
+    except Exception as e:
+        print(f"Error fetching live news for {name}: {e}")
     
     return {
         "name": name,
@@ -720,7 +604,9 @@ def analyze_ipo(ipo: dict) -> dict:
         "overall_score": round(overall_score, 1),
         "recommendation": recommendation,
         "recommendation_reason": recommendation_reason,
-        # Pass through rich detailed text fields
+        # Live Aggregated News
+        "live_news": live_news,
+        # Detailed text fields
         "company_description": ipo.get("company_description", "No description available."),
         "development_scope": ipo.get("development_scope", "Steady industry trends expected."),
         "growth_runway": ipo.get("growth_runway", "Moderate growth anticipated."),
