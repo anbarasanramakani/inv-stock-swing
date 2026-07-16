@@ -490,6 +490,7 @@ import news_provider as news_helper
 import optimizer     as opt
 import intraday_screener as intra
 import analysis_history as hist
+import ipo_provider as ipo
 
 importlib.reload(tick_helper)
 importlib.reload(dp)
@@ -1306,8 +1307,14 @@ def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
             ltp_color = "#3fb950" if chg_pct >= 0 else "#f85149"
             arrow     = "▲" if chg_pct >= 0 else "▼"
 
+            # Get sector & market cap info
+            sector = row.get("Sector", "") or (ipo.get_sector(ticker) if ticker else "")
+            mcap = row.get("Market_Cap", "") or ""
+            
             # Pill HTML
             pills = ""
+            if sector: pills += f'<span class="pill">{sector}</span>'
+            if mcap:   pills += f'<span class="pill">{mcap}</span>'
             if sl:  pills += f'<span class="pill pill-sl">SL ₹{sl}</span>'
             if tgt: pills += f'<span class="pill pill-tgt">TGT ₹{tgt}</span>'
             if rr:  pills += f'<span class="pill">{rr}</span>'
@@ -1754,13 +1761,12 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
     medium_df_session = _ensure_ticker_column(st.session_state.medium_term_picks if st.session_state.medium_term_picks is not None else pd.DataFrame())
     intra_df_session = _ensure_ticker_column(st.session_state.intraday_picks if st.session_state.intraday_picks is not None else pd.DataFrame())
 
-    tab1, tab2_intra, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2_intra, tab2, tab3, tab4, tab5 = st.tabs([
         "⚡  Live Picks & Prices",
         "🏃  Intraday Scanner",
         "📰  News Catalyst Scanner",
         "📊  Backtest Tracker",
-        "🔍  Chart Analysis",
-        "⚙️  3-Month Multi-Strategy Optimizer",
+        "💰  IPO Watch & Analysis",
         "📜  Analysis History",
     ])
 
@@ -2079,624 +2085,182 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                         unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════════════════
-    # TAB 3 — Deep chart analysis
+    # TAB 5 — IPO Watch & Analysis
     # ══════════════════════════════════════════════════════════════
     with tab4:
-        # Gather all ticker options
-        all_syms = list(dict.fromkeys(
-            (results_df["Ticker"].tolist() if not results_df.empty else []) +
-            (news_df_session["Ticker"].tolist()
-             if news_df_session is not None and not news_df_session.empty else []) +
-            (medium_df_session["Ticker"].tolist()
-             if medium_df_session is not None and not medium_df_session.empty else [])
-        ))
-
-        if not all_syms:
-            st.markdown('<div class="infobox">No picks available. Run Analysis first.</div>',
-                        unsafe_allow_html=True)
-        else:
-            selected_ticker = st.selectbox(
-                "Select stock for detailed chart",
-                options=all_syms,
-                format_func=lambda x: x.replace(".NS", ""),
+        st.markdown("""
+        <div class="infobox">
+          <b>💰 IPO Watch — In Progress, Upcoming & Recently Listed</b><br>
+          Comprehensive IPO analysis including sector/domain classification, financial peer comparison, 
+          listing gain probability assessment, growth opportunity evaluation, and final recommendation.
+        </div>
+        """, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            refresh_ipos = st.button("🔄 Refresh IPO Data", key="refresh_ipos")
+        with col2:
+            ipo_filter = st.selectbox(
+                "Filter IPOs by status",
+                ["All", "Upcoming", "Ongoing", "Listed"],
+                key="ipo_filter"
             )
-
-            if selected_ticker and selected_ticker in data_cache:
-                hist_df = data_cache[selected_ticker]
-                symbol  = selected_ticker.replace(".NS", "")
-
-                # Live price
-                ltp    = ltp_cache.get(selected_ticker) or dp.get_live_ltp(symbol)
-                pclose = float(hist_df['Close'].iloc[-2]) if len(hist_df) > 1 else float(hist_df['Close'].iloc[-1])
-                if not ltp:
-                    ltp = float(hist_df['Close'].iloc[-1])
-                chg_pct   = (ltp - pclose) / pclose * 100 if pclose else 0.0
-                ltp_color = "#3fb950" if chg_pct >= 0 else "#f85149"
-                arrow     = "▲" if chg_pct >= 0 else "▼"
-
-                df_ind  = scr.calculate_indicators(hist_df)
-                if df_ind is None:
-                    st.warning("Insufficient data for this stock.")
-                else:
-                    plot_df = df_ind.tail(120).copy()
-                    r       = df_ind.iloc[-1]
-                    rsi_c   = "#f85149" if r['RSI'] > 70 else "#3fb950" if r['RSI'] < 30 else "#e6edf3"
-                    rsi_lbl = "Overbought" if r['RSI'] > 70 else "Oversold" if r['RSI'] < 30 else "Neutral"
-                    vol_c   = "#d2a8ff" if r['Vol_Ratio'] >= 1.5 else "#e6edf3"
-                    vwap_c  = "#3fb950" if ltp >= r['VWAP'] else "#f85149"
-                    vwap_lbl= f"{'Above' if ltp>=r['VWAP'] else 'Below'} VWAP"
-                    h52     = r.get("High52W", ltp)
-                    l52     = r.get("Low52W", ltp)
-                    pct52   = (ltp / h52 * 100) if h52 else 0.0
-
-                    # Live banner
+        
+        # Load IPO data
+        if refresh_ipos or "ipo_list" not in st.session_state:
+            with st.spinner("Fetching IPO data from NSE..."):
+                ipo_list = ipo.get_live_ipos()
+                st.session_state.ipo_list = ipo_list
+        
+        ipo_list = st.session_state.get("ipo_list", [])
+        
+        if not ipo_list:
+            st.warning("No IPO data available. IPO data will appear once fetched from NSE API.")
+            # Show sample structure
+            st.markdown("""
+            <div style="padding:20px; text-align:center; color:#5a7a9a;">
+                <div style="font-size:2rem;margin-bottom:10px;">📋</div>
+                <div>IPO data loads automatically when the NSE API is available.<br>
+                The system will analyze each IPO for sector, valuation, listing gains, and growth potential.</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            # Filter IPOs
+            if ipo_filter == "Upcoming":
+                filtered = [i for i in ipo_list if i.get("status", "").lower() in ["upcoming", "open"]]
+            elif ipo_filter == "Ongoing":
+                filtered = [i for i in ipo_list if i.get("status", "").lower() == "ongoing"]
+            elif ipo_filter == "Listed":
+                filtered = [i for i in ipo_list if i.get("status", "").lower() in ["listed", "closed"]]
+            else:
+                filtered = ipo_list
+            
+            # Analyze all IPOs
+            analyzed_ipos = []
+            for ipo_item in filtered:
+                try:
+                    analysis = ipo.analyze_ipo(ipo_item)
+                    analyzed_ipos.append(analysis)
+                except Exception:
+                    analyzed_ipos.append({
+                        "name": ipo_item.get("name", "Unknown"),
+                        "sector": "N/A", "status": ipo_item.get("status", "Unknown"),
+                        "recommendation": "N/A",
+                    })
+            
+            if not analyzed_ipos:
+                st.info(f"No IPOs found matching filter: {ipo_filter}")
+            else:
+                # Metrics summary
+                st.markdown("### 📊 IPO Market Summary")
+                mc1, mc2, mc3, mc4 = st.columns(4)
+                with mc1:
+                    strong_buys = sum(1 for a in analyzed_ipos if a.get("recommendation") == "STRONG BUY")
+                    st.metric("STRONG BUY", strong_buys)
+                with mc2:
+                    buys = sum(1 for a in analyzed_ipos if a.get("recommendation") == "BUY")
+                    st.metric("BUY", buys)
+                with mc3:
+                    holds = sum(1 for a in analyzed_ipos if "HOLD" in a.get("recommendation", ""))
+                    st.metric("HOLD / SUBSCRIBE", holds)
+                with mc4:
+                    avoids = sum(1 for a in analyzed_ipos if a.get("recommendation") in ("AVOID", "SKIP"))
+                    st.metric("AVOID / SKIP", avoids)
+                
+                st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
+                
+                # Render IPO cards
+                for ipo_analysis in analyzed_ipos:
+                    rec = ipo_analysis.get("recommendation", "N/A")
+                    if rec == "STRONG BUY":
+                        rec_color, rec_bg = "#00c853", "rgba(0,200,83,0.12)"
+                        border_color = "rgba(0,200,83,0.3)"
+                    elif rec == "BUY":
+                        rec_color, rec_bg = "#3fb950", "rgba(63,185,80,0.1)"
+                        border_color = "rgba(63,185,80,0.25)"
+                    elif "HOLD" in rec:
+                        rec_color, rec_bg = "#ffa657", "rgba(255,166,87,0.1)"
+                        border_color = "rgba(255,166,87,0.25)"
+                    else:
+                        rec_color, rec_bg = "#f85149", "rgba(248,81,73,0.1)"
+                        border_color = "rgba(248,81,73,0.25)"
+                    
                     st.markdown(f"""
-                    <div class="live-banner">
-                      <div class="lb-item" style="min-width:80px;">
-                        <div class="lb-label">Symbol</div>
-                        <div style="font-size:1.35rem;font-weight:800;color:#e6edf3;">{symbol}</div>
-                        <div class="lb-sub">NSE · Equity</div>
+                    <div style="background:#08111e;border:1px solid {border_color};border-radius:10px;padding:16px 18px;margin-bottom:12px;position:relative;overflow:hidden;">
+                      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+                        <div style="flex:1;min-width:200px;">
+                          <div style="font-size:1.05rem;font-weight:800;color:#f0f6ff;">{ipo_analysis.get('name','')}</div>
+                          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+                            <span class="pill">{ipo_analysis.get('sector','N/A')}</span>
+                            <span class="pill">{ipo_analysis.get('status','N/A')}</span>
+                            <span class="pill">{ipo_analysis.get('price_band','N/A')}</span>
+                          </div>
+                        </div>
+                        <div style="text-align:right;">
+                          <div style="font-size:0.85rem;font-weight:700;color:{rec_color};background:{rec_bg};
+                                      border:1px solid {border_color};border-radius:20px;padding:4px 16px;display:inline-block;">
+                            {rec}
+                          </div>
+                          <div style="font-size:0.68rem;color:#5a7a9a;margin-top:4px;">Score: {ipo_analysis.get('overall_score',0)}/100</div>
+                        </div>
                       </div>
-                      <div class="lb-divider"></div>
-                      <div class="lb-item">
-                        <div class="lb-label"><span class="live-dot"></span>Live Price</div>
-                        <div class="lb-value" style="color:{ltp_color};font-size:1.35rem;">₹{ltp:,.2f}</div>
-                        <div class="lb-sub" style="color:{ltp_color};">{arrow} {abs(chg_pct):.2f}%</div>
+                      <div style="margin-top:12px;display:flex;gap:16px;flex-wrap:wrap;border-top:1px solid #0d1f35;padding-top:10px;">
+                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Listing Gain</span><br>
+                             <span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('listing_gain_probability','N/A')} ({ipo_analysis.get('listing_gain_score',0)})</span></div>
+                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Growth</span><br>
+                             <span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('growth_score',0)}/100</span></div>
+                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Assessment</span><br>
+                             <span style="font-size:0.7rem;color:#8aaccc;">{ipo_analysis.get('growth_assessment','')[:100]}</span></div>
+                        <div style="flex:1;text-align:right;">
+                          <span style="font-size:0.7rem;color:#8aaccc;">{ipo_analysis.get('recommendation_reason','')}</span>
+                        </div>
                       </div>
-                      <div class="lb-divider"></div>
-                      <div class="lb-item">
-                        <div class="lb-label">52W Range</div>
-                        <div class="lb-value" style="font-size:.92rem;">₹{l52:,.0f} – ₹{h52:,.0f}</div>
-                        <div class="lb-sub">At {pct52:.1f}% of 52W High</div>
+                      {f'''
+                      <div style="margin-top:8px;display:flex;gap:16px;flex-wrap:wrap;border-top:1px solid #0d1f35;padding-top:8px;">
+                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Open</span><br>
+                             <span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('open_date','N/A')}</span></div>
+                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Close</span><br>
+                             <span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('close_date','N/A')}</span></div>
+                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Listing</span><br>
+                             <span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('listing_date','N/A')}</span></div>
                       </div>
-                      <div class="lb-divider"></div>
-                      <div class="lb-item">
-                        <div class="lb-label">RSI (14)</div>
-                        <div class="lb-value" style="color:{rsi_c};">{r['RSI']:.1f}</div>
-                        <div class="lb-sub">{rsi_lbl}</div>
-                      </div>
-                      <div class="lb-divider"></div>
-                      <div class="lb-item">
-                        <div class="lb-label">VWAP</div>
-                        <div class="lb-value" style="color:{vwap_c};">₹{r['VWAP']:,.2f}</div>
-                        <div class="lb-sub">{vwap_lbl}</div>
-                      </div>
-                      <div class="lb-divider"></div>
-                      <div class="lb-item">
-                        <div class="lb-label">Vol Ratio</div>
-                        <div class="lb-value" style="color:{vol_c};">{r['Vol_Ratio']:.2f}×</div>
-                        <div class="lb-sub">vs 20-day avg</div>
-                      </div>
-                      <div class="lb-divider"></div>
-                      <div class="lb-item">
-                        <div class="lb-label">ATR (14)</div>
-                        <div class="lb-value">₹{r['ATR']:.2f}</div>
-                        <div class="lb-sub">Daily volatility</div>
-                      </div>
+                      ''' if ipo_analysis.get('open_date') else ''}
                     </div>
                     """, unsafe_allow_html=True)
 
-                    # ── 4-panel chart ──
-                    fig = make_subplots(
-                        rows=4, cols=1, shared_xaxes=True,
-                        vertical_spacing=0.022,
-                        row_heights=[0.52, 0.16, 0.16, 0.16],
-                        subplot_titles=[
-                            f"{symbol} — 120-Day Daily Chart",
-                            "Volume", "RSI (14)", "MACD (12, 26, 9)"
-                        ],
-                    )
-
-                    # Candlestick
-                    fig.add_trace(go.Candlestick(
-                        x=plot_df.index,
-                        open=plot_df['Open'], high=plot_df['High'],
-                        low=plot_df['Low'],   close=plot_df['Close'],
-                        name="Candles",
-                        increasing_line_color="#3fb950",
-                        increasing_fillcolor="rgba(63,185,80,0.85)",
-                        decreasing_line_color="#f85149",
-                        decreasing_fillcolor="rgba(248,81,73,0.85)",
-                    ), row=1, col=1)
-
-                    # EMAs
-                    for ema, col_c, dash in [
-                        ("EMA20",  "#58a6ff", "solid"),
-                        ("EMA50",  "#ffa657", "solid"),
-                        ("EMA200", "#f778ba", "dot"),
-                    ]:
-                        fig.add_trace(go.Scatter(
-                            x=plot_df.index, y=plot_df[ema], name=ema,
-                            line=dict(color=col_c, width=1.5, dash=dash),
-                        ), row=1, col=1)
-
-                    # VWAP
-                    fig.add_trace(go.Scatter(
-                        x=plot_df.index, y=plot_df['VWAP'], name="VWAP",
-                        line=dict(color="#d2a8ff", width=1.5, dash="dash"),
-                    ), row=1, col=1)
-
-                    # Bollinger Bands
-                    fig.add_trace(go.Scatter(
-                        x=plot_df.index, y=plot_df['BB_Upper'], name="BB Upper",
-                        line=dict(color="rgba(63,185,80,.2)", width=1, dash="dash"),
-                        showlegend=False,
-                    ), row=1, col=1)
-                    fig.add_trace(go.Scatter(
-                        x=plot_df.index, y=plot_df['BB_Lower'], name="BB Lower",
-                        line=dict(color="rgba(248,81,73,.2)", width=1, dash="dash"),
-                        fill="tonexty", fillcolor="rgba(255,255,255,.018)",
-                        showlegend=False,
-                    ), row=1, col=1)
-
-                    # LTP reference line
-                    fig.add_hline(
-                        y=ltp, line_dash="dot", line_color=ltp_color, line_width=1.5,
-                        annotation_text=f"LTP ₹{ltp:,.2f}",
-                        annotation_font_color=ltp_color,
-                        annotation_font_size=11,
-                        row=1, col=1,
-                    )
-
-                    # Volume
-                    v_colors = [
-                        "rgba(248,81,73,.7)" if plot_df['Close'].iloc[i] < plot_df['Open'].iloc[i]
-                        else "rgba(63,185,80,.7)"
-                        for i in range(len(plot_df))
-                    ]
-                    fig.add_trace(go.Bar(
-                        x=plot_df.index, y=plot_df['Volume'],
-                        name="Volume", marker_color=v_colors, showlegend=False,
-                    ), row=2, col=1)
-                    fig.add_trace(go.Scatter(
-                        x=plot_df.index, y=plot_df['Vol_Avg20'], name="Vol 20D",
-                        line=dict(color="#6e7f96", width=1.2, dash="dot"), showlegend=False,
-                    ), row=2, col=1)
-
-                    # RSI
-                    fig.add_trace(go.Scatter(
-                        x=plot_df.index, y=plot_df['RSI'], name="RSI",
-                        line=dict(color="#79c0ff", width=1.5), showlegend=False,
-                        fill="tozeroy", fillcolor="rgba(121,192,255,.04)",
-                    ), row=3, col=1)
-                    for y_lvl, lc in [(70, "#f85149"), (30, "#3fb950"), (50, "#4a5568")]:
-                        fig.add_hline(y=y_lvl, line_dash="dash", line_color=lc,
-                                      line_width=1, row=3, col=1)
-
-                    # MACD
-                    hist_c = [
-                        "rgba(63,185,80,.7)" if v >= 0 else "rgba(248,81,73,.7)"
-                        for v in plot_df['MACD_Hist']
-                    ]
-                    fig.add_trace(go.Bar(
-                        x=plot_df.index, y=plot_df['MACD_Hist'],
-                        name="MACD Hist", marker_color=hist_c, showlegend=False,
-                    ), row=4, col=1)
-                    fig.add_trace(go.Scatter(
-                        x=plot_df.index, y=plot_df['MACD'], name="MACD",
-                        line=dict(color="#58a6ff", width=1.3), showlegend=False,
-                    ), row=4, col=1)
-                    fig.add_trace(go.Scatter(
-                        x=plot_df.index, y=plot_df['MACD_Signal'], name="Signal",
-                        line=dict(color="#ffa657", width=1.3), showlegend=False,
-                    ), row=4, col=1)
-
-                    fig.update_layout(
-                        height=820,
-                        xaxis_rangeslider_visible=False,
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        plot_bgcolor="rgba(0,0,0,0)",
-                        font=dict(color="#8892a4", family="Inter", size=11),
-                        margin=dict(t=42, b=16, l=10, r=10),
-                        legend=dict(
-                            bgcolor="rgba(13,17,23,.9)",
-                            bordercolor="#21262d", borderwidth=1,
-                            font=dict(size=10),
-                            orientation="h",
-                            yanchor="bottom", y=1.01,
-                            xanchor="left",   x=0,
-                        ),
-                    )
-                    fig.update_xaxes(
-                        showgrid=True, gridcolor="rgba(255,255,255,.04)", gridwidth=1,
-                        showspikes=True, spikecolor="#1f6feb", spikethickness=1,
-                    )
-                    fig.update_yaxes(
-                        showgrid=True, gridcolor="rgba(255,255,255,.04)", gridwidth=1,
-                    )
-                    st.plotly_chart(fig, width='stretch')
-
-                    # ── Trade setup detail cards ──
-                    selected_row = None
-                    normalized_results = _ensure_ticker_column(results_df)
-                    normalized_news = _ensure_ticker_column(st.session_state.news_picks)
-                    normalized_medium = _ensure_ticker_column(st.session_state.medium_term_picks)
-
-                    if not normalized_results.empty and selected_ticker in normalized_results["Ticker"].values:
-                        selected_row = normalized_results[normalized_results["Ticker"] == selected_ticker].iloc[0].to_dict()
-                    elif (normalized_news is not None and not normalized_news.empty and selected_ticker in normalized_news["Ticker"].values):
-                        nr = normalized_news[normalized_news["Ticker"] == selected_ticker].iloc[0]
-                        selected_row = {
-                            "Ticker": selected_ticker,
-                            "Price": nr.get("Price"), "Entry Range": nr.get("Entry Range"),
-                            "Stop Loss": nr.get("Stop Loss"), "Target": nr.get("Target"),
-                            "Risk_Reward": nr.get("Risk_Reward"),
-                            "High_Conviction": True, "Superstar_Buying": False,
-                            "Strategy": f"News: {nr.get('Catalyst', 'News')}",
-                            "Institutional_Details": nr.get("Headline"),
-                        }
-                    elif (normalized_medium is not None and not normalized_medium.empty and selected_ticker in normalized_medium["Ticker"].values):
-                        selected_row = normalized_medium[normalized_medium["Ticker"] == selected_ticker].iloc[0].to_dict()
-
-                    if selected_row:
-                        dc1, dc2 = st.columns(2)
-
-                        def _trow(lbl, val, vc="#e6edf3"):
-                            return (f'<div style="display:flex;justify-content:space-between;'
-                                    f'padding:8px 0;border-bottom:1px solid #21262d;">'
-                                    f'<span style="font-size:.76rem;color:#6e7f96;">{lbl}</span>'
-                                    f'<span style="font-family:JetBrains Mono,monospace;'
-                                    f'font-size:.8rem;font-weight:600;color:{vc};">{val}</span></div>')
-
-                        with dc1:
-                            badge = ""
-                            if selected_row.get("Superstar_Buying"):
-                                badge = (f'<div style="background:rgba(247,129,102,.12);color:#f78166;'
-                                         f'border:1px solid rgba(247,129,102,.3);border-radius:5px;'
-                                         f'padding:4px 10px;font-size:.7rem;font-weight:700;'
-                                         f'display:inline-block;margin-bottom:10px;">'
-                                         f'🔥 SUPERSTAR: {selected_row.get("Superstar_Names","")}</div>')
-                            elif selected_row.get("High_Conviction"):
-                                badge = ('<div style="background:rgba(63,185,80,.1);color:#3fb950;'
-                                         'border:1px solid rgba(63,185,80,.3);border-radius:5px;'
-                                         'padding:4px 10px;font-size:.7rem;font-weight:700;'
-                                         'display:inline-block;margin-bottom:10px;">💎 INSTITUTIONAL</div>')
-
-                            st.markdown(f"""
-                            <div style="background:#0d1117;border:1px solid #21262d;border-radius:10px;padding:18px 20px;">
-                              <div style="font-size:.85rem;font-weight:700;color:#e6edf3;margin-bottom:12px;">🎯 Trade Setup</div>
-                              {badge}
-                              {_trow("Strategy", selected_row.get("Strategy","—"), "#79c0ff")}
-                              {_trow("Live Price", f"₹{ltp:,.2f}", ltp_color)}
-                              {_trow("Entry Range", f"₹{selected_row.get('Entry Range','—')}")}
-                              {_trow("Stop Loss",   f"₹{selected_row.get('Stop Loss','—')}", "#f85149")}
-                              {_trow("Target",      f"₹{selected_row.get('Target','—')}",    "#3fb950")}
-                              {_trow("Risk:Reward", selected_row.get("Risk_Reward","—"))}
-                              {_trow("RSI (14)",    f"{r['RSI']:.1f}")}
-                              {_trow("VWAP",        f"₹{r['VWAP']:,.2f}", vwap_c)}
-                              {_trow("Vol Ratio",   f"{r['Vol_Ratio']:.2f}×")}
-                            </div>
-                            """, unsafe_allow_html=True)
-
-                        with dc2:
-                            notes = (
-                                selected_row.get("Institutional_Details") or
-                                selected_row.get("Reason") or
-                                selected_row.get("Headline") or
-                                "Technical setup confirmed. No additional institutional details available."
-                            )
-                            st.markdown(f"""
-                            <div style="background:#0d1117;border:1px solid #21262d;border-radius:10px;padding:18px 20px;">
-                              <div style="font-size:.85rem;font-weight:700;color:#e6edf3;margin-bottom:12px;">📝 Analysis Notes</div>
-                              <div style="font-size:.8rem;color:#8892a4;line-height:1.75;margin-bottom:16px;">{notes}</div>
-                              <div style="background:#161b22;border:1px solid #21262d;border-radius:7px;padding:12px 14px;">
-                                <div style="font-size:.65rem;color:#6e7f96;font-weight:700;text-transform:uppercase;
-                                            letter-spacing:.08em;margin-bottom:7px;">Exit Rules</div>
-                                <div style="font-size:.76rem;color:#8892a4;line-height:1.7;">
-                                  Exit on <span style="color:#f85149;font-weight:700;">Stop Loss</span> hit or
-                                  <span style="color:#3fb950;font-weight:700;">Target</span> hit.<br>
-                                  Max hold: <b style="color:#e6edf3;">5 days</b> (short) ·
-                                  <b style="color:#e6edf3;">30 days</b> (medium-term).
-                                </div>
-                              </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-
-    # ══════════════════════════════════════════════════════════════
-    # TAB 4 — 3-Month Multi-Strategy Optimizer
-    # ══════════════════════════════════════════════════════════════
-    with tab5:
-        st.markdown("""
-        <div class="infobox">
-          <b>3-Month Multi-Strategy Backtester & Optimizer</b><br>
-          Run individual strategies and their mixed combinations (AND, OR, Consensus models) 
-          over the past 3 months (max 5-day hold). Select <b>Single Stock Analysis</b> to deep-dive, or 
-          <b>Universe-Wide Leaderboard Scanner</b> to search all stocks for <b>95%+ Target Hit Rate</b> setups.
-        </div>
-        """, unsafe_allow_html=True)
-
-        opt_mode = st.radio("Optimizer Mode", ["Single Stock Analysis", "Universe-Wide Leaderboard Scanner"], horizontal=True, key="opt_mode_toggle")
-
-        if opt_mode == "Single Stock Analysis":
-            all_syms_opt = list(dict.fromkeys(
-                (results_df["Ticker"].tolist() if not results_df.empty else []) +
-                (news_df_session["Ticker"].tolist()
-                 if news_df_session is not None and not news_df_session.empty else []) +
-                (medium_df_session["Ticker"].tolist()
-                 if medium_df_session is not None and not medium_df_session.empty else [])
-            ))
-            
-            if not all_syms_opt:
-                all_syms_opt = ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "SBIN.NS", "INFY.NS"]
-
-            c1, c2 = st.columns(2)
-            with c1:
-                sel_ticker = st.selectbox(
-                    "Select stock from picks",
-                    options=all_syms_opt,
-                    format_func=lambda x: x.replace(".NS", ""),
-                    key="opt_sel_ticker"
-                )
-                custom_ticker = st.text_input("Or enter any other NSE symbol (e.g. SBIN, TATAMOTORS)", key="opt_custom_ticker").strip().upper()
+                # Table view
+                st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+                st.markdown("### 📋 All IPO Analysis Table")
                 
-                ticker_to_opt = f"{custom_ticker}.NS" if custom_ticker else sel_ticker
+                ipo_table_data = []
+                for a in analyzed_ipos:
+                    ipo_table_data.append({
+                        "Company": a.get("name", ""),
+                        "Sector": a.get("sector", ""),
+                        "Status": a.get("status", ""),
+                        "Price Band": a.get("price_band", ""),
+                        "Recommendation": a.get("recommendation", ""),
+                        "Overall Score": a.get("overall_score", 0),
+                        "Listing Gain": a.get("listing_gain_probability", ""),
+                        "Growth Score": a.get("growth_score", 0),
+                    })
                 
-            with c2:
-                opt_backtest_days = st.slider("Backtest Window (Trading Days ~ 3 months = 60)", min_value=20, max_value=120, value=60, step=5, key="opt_window_days")
-                opt_hold_days = st.slider("Max Holding Period (Trading Days)", min_value=1, max_value=20, value=5, step=1, key="opt_hold_days")
-
-            run_opt = st.button("⚡ Run Multi-Strategy Optimization", key="run_opt_trigger")
-
-            if run_opt:
-                with st.spinner(f"Running multi-strategy optimization for {ticker_to_opt.replace('.NS', '')}..."):
-                    df_hist = None
-                    if ticker_to_opt in data_cache:
-                        df_hist = data_cache[ticker_to_opt]
-                    else:
-                        df_hist = dp.get_single_stock_data(ticker_to_opt, period="1y")
-                    
-                    if df_hist is None or df_hist.empty:
-                        st.error(f"Could not retrieve historical EOD data for {ticker_to_opt}. Please ensure the symbol is valid.")
-                    else:
-                        summary_df, trade_logs = opt.run_3month_optimization(df_hist, hold_days=opt_hold_days, backtest_days=opt_backtest_days, ticker=ticker_to_opt)
-                        st.session_state.opt_summary = summary_df
-                        st.session_state.opt_logs = trade_logs
-                        st.session_state.opt_ticker_run = ticker_to_opt
-
-            if st.session_state.get("opt_summary") is not None and st.session_state.get("opt_ticker_run") is not None:
-                opt_sum = st.session_state.opt_summary
-                opt_logs = st.session_state.opt_logs
-                t_run = st.session_state.opt_ticker_run.replace(".NS", "")
-                
-                st.markdown(f"### 📊 Strategy Optimization: **{t_run}**")
-                
-                if opt_sum.empty:
-                    st.warning("No trades were triggered for any strategy configuration in this backtest window.")
-                else:
-                    best_strat = opt_sum.iloc[0]
-                    best_rate = best_strat["Target Hit Rate (%)"]
-                    has_95 = any(opt_sum["Target Hit Rate (%)"] >= 95.0)
-                    
-                    mc1, mc2, mc3, mc4 = st.columns(4)
-                    with mc1:
-                        st.metric("Best Strategy", best_strat["Strategy"])
-                    with mc2:
-                        st.metric("Target Hit Rate", f"{best_rate:.1f}%", delta="🏆 95% Hit!" if best_rate >= 95.0 else None)
-                    with mc3:
-                        st.metric("Total Trades", int(best_strat["Total Trades"]))
-                    with mc4:
-                        st.metric("Avg P&L per Trade", f"{best_strat['Avg P&L (%)']:+.2f}%")
-                        
-                    if has_95:
-                        st.success("🎉 **Success:** Found mixed/individual strategies that hit the **95%+ Target Hit Rate** threshold! (Highlighted in green below)")
-                    else:
-                        st.warning("⚠️ No strategy configuration achieved the **95% Target Hit Rate** threshold. Showing top performing configurations.")
-                    
-                    def highlight_95_rows(row):
-                        if row["Target Hit Rate (%)"] >= 95.0 and row["Total Trades"] > 0:
-                            return ["background-color: rgba(63, 185, 80, 0.18); border-left: 3px solid #3fb950;"] * len(row)
-                        return [""] * len(row)
-                    
-                    try:
-                        styled_summary = opt_sum.style.apply(highlight_95_rows, axis=1)
-                    except Exception:
-                        styled_summary = opt_sum
-                        
+                if ipo_table_data:
+                    ipo_df = pd.DataFrame(ipo_table_data)
                     st.dataframe(
-                        styled_summary,
+                        ipo_df,
                         column_config={
-                            "Target Hit Rate (%)": st.column_config.NumberColumn("Hit Rate", format="%.2f%%"),
-                            "Avg P&L (%)": st.column_config.NumberColumn("Avg P&L", format="%+.2f%%"),
-                            "Total Trades": st.column_config.NumberColumn("Trades"),
-                            "Target Hits": st.column_config.NumberColumn("Hits"),
-                            "Stop Loss Hits": st.column_config.NumberColumn("SL Hits"),
-                            "Time Exits": st.column_config.NumberColumn("Time Exits"),
+                            "Overall Score": st.column_config.NumberColumn("Score", format="%.1f"),
+                            "Growth Score": st.column_config.NumberColumn("Growth", format="%.1f"),
                         },
                         hide_index=True,
                         width='stretch'
                     )
-                    
-                    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
-                    st.markdown("### 📝 Detailed Trade Logs")
-                    selected_strat = st.selectbox(
-                        "Select strategy to inspect individual trades",
-                        options=opt_sum["Strategy"].tolist(),
-                        key="opt_inspect_strat"
-                    )
-                    
-                    if selected_strat:
-                        strat_trades = opt_logs.get(selected_strat, [])
-                        if not strat_trades:
-                            st.info("No trades triggered for this strategy.")
-                        else:
-                            trades_df = pd.DataFrame(strat_trades)
-                            def _highlight_opt_status(row):
-                                s, p = row.get("Status", ""), row.get("P&L (%)", 0)
-                                if s == "Target Hit":
-                                    return f"🟢 Target Hit (+{p:.2f}%)"
-                                elif s == "Stop Loss Hit":
-                                    return f"🔴 Stop Loss ({p:.2f}%)"
-                                else:
-                                    return f"🟡 Time Exit ({p:+.2f}%)"
-                            
-                            trades_df["Outcome"] = trades_df.apply(_highlight_opt_status, axis=1)
-                            show_trades = trades_df[["Trigger Date", "Exit Date", "Entry Price", "Target", "Stop Loss", "Exit Price", "Days Held", "Outcome"]].copy()
-                            # Coerce numeric columns to prevent PyArrow serialization ArrowTypeError
-                            for numeric_col in ["Entry Price", "Target", "Stop Loss", "Exit Price", "Days Held"]:
-                                if numeric_col in show_trades.columns:
-                                    show_trades[numeric_col] = pd.to_numeric(show_trades[numeric_col], errors='coerce')
-                            st.dataframe(
-                                show_trades,
-                                column_config={
-                                    "Entry Price": st.column_config.NumberColumn("Entry Price (₹)", format="₹%.2f"),
-                                    "Target": st.column_config.NumberColumn("Target (₹)", format="₹%.2f"),
-                                    "Stop Loss": st.column_config.NumberColumn("SL (₹)", format="₹%.2f"),
-                                    "Exit Price": st.column_config.NumberColumn("Exit Price (₹)", format="₹%.2f"),
-                                    "Days Held": st.column_config.NumberColumn("Hold Days"),
-                                },
-                                hide_index=True,
-                                width='stretch'
-                            )
-
-        elif opt_mode == "Universe-Wide Leaderboard Scanner":
-            # Scan active universe (data_cache)
-            if not data_cache:
-                st.warning("No data cache available. Please click 'Run Full Analysis' in the sidebar first.")
-            else:
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    opt_backtest_days = st.slider("Backtest Window (Trading Days ~ 3 months = 60)", min_value=20, max_value=120, value=60, step=5, key="ld_window_days")
-                with c2:
-                    opt_hold_days = st.slider("Max Holding Period (Trading Days)", min_value=1, max_value=20, value=5, step=1, key="ld_hold_days")
-                with c3:
-                    min_trades = st.number_input("Minimum Required Trades", min_value=1, max_value=10, value=3, step=1, key="ld_min_trades")
-
-                threshold_rate = st.slider("Highlight Win Rate Threshold (%)", min_value=50.0, max_value=100.0, value=95.0, step=1.0, key="ld_threshold")
-
-                run_scan = st.button("🔍 Scan Active Universe", key="run_ld_trigger")
-
-                if run_scan:
-                    leaderboard_records = []
-                    # Progress indicators
-                    stocks_to_scan = list(data_cache.keys())
-                    prog_text = st.empty()
-                    prog_bar = st.progress(0.0)
-                    
-                    # We run in a fast loop
-                    import time as pytime
-                    start_time = pytime.time()
-                    
-                    for idx, ticker in enumerate(stocks_to_scan):
-                        prog_text.text(f"Scanning {ticker.replace('.NS','')} ({idx+1}/{len(stocks_to_scan)})...")
-                        prog_bar.progress((idx+1)/len(stocks_to_scan))
-                        
-                        df_stock = data_cache[ticker]
-                        sum_df, _ = opt.run_3month_optimization(df_stock, hold_days=opt_hold_days, backtest_days=opt_backtest_days, ticker=ticker)
-                        
-                        if not sum_df.empty:
-                            # Filter stocks that meet the min trades criterion
-                            filtered_df = sum_df[sum_df["Total Trades"] >= min_trades].copy()
-                            if not filtered_df.empty:
-                                for _, row in filtered_df.iterrows():
-                                    leaderboard_records.append({
-                                        "Stock": ticker.replace(".NS", ""),
-                                        "Strategy": row["Strategy"],
-                                        "Type": row["Type"],
-                                        "Total Trades": int(row["Total Trades"]),
-                                        "Target Hits": int(row["Target Hits"]),
-                                        "Target Hit Rate (%)": row["Target Hit Rate (%)"],
-                                        "Avg P&L (%)": row["Avg P&L (%)"]
-                                    })
-                                    
-                    prog_text.empty()
-                    prog_bar.empty()
-                    
-                    scan_dur = pytime.time() - start_time
-                    st.toast(f"✅ Scanned {len(stocks_to_scan)} stocks in {scan_dur:.2f} seconds!", icon="⚡")
-                    
-                    leader_df = pd.DataFrame(leaderboard_records)
-                    if not leader_df.empty:
-                        # Sort by Target Hit Rate DESC, Total Trades DESC, Avg PnL DESC
-                        leader_df = leader_df.sort_values(by=["Target Hit Rate (%)", "Total Trades", "Avg P&L (%)"], ascending=[False, False, False]).reset_index(drop=True)
-                    st.session_state.opt_leaderboard = leader_df
-
-                if st.session_state.get("opt_leaderboard") is not None:
-                    leader_df = st.session_state.opt_leaderboard
-                    
-                    st.markdown("### 🏆 Universe-Wide Strategy Leaderboard")
-                    
-                    ld_display_type = st.radio(
-                        "Select Leaderboard Display View",
-                        ["Stock-Specific Combinations", "Strategy-Specific Aggregate (Winning Strategies)"],
-                        horizontal=True,
-                        key="ld_display_type"
-                    )
-                    
-                    if leader_df.empty:
-                        st.warning("No strategy configurations matched the criteria across the scanned universe.")
-                    else:
-                        if ld_display_type == "Strategy-Specific Aggregate (Winning Strategies)":
-                            # Aggregate by Strategy and Type
-                            agg_df = leader_df.groupby(["Strategy", "Type"]).agg(
-                                Total_Trades=("Total Trades", "sum"),
-                                Target_Hits=("Target Hits", "sum"),
-                                Avg_PnL=("Avg P&L (%)", "mean"),
-                                Stocks_Traded=("Stock", "count")
-                            ).reset_index()
-                            
-                            agg_df["Target Hit Rate (%)"] = (agg_df["Target_Hits"] / agg_df["Total_Trades"]) * 100
-                            agg_df["Target Hit Rate (%)"] = agg_df["Target Hit Rate (%)"].fillna(0.0).round(2)
-                            agg_df["Avg P&L (%)"] = agg_df["Avg_PnL"].round(2)
-                            
-                            leader_df_to_show = agg_df.rename(columns={
-                                "Total_Trades": "Total Trades",
-                                "Target_Hits": "Target Hits",
-                                "Stocks_Traded": "Stocks Traded"
-                            })[["Strategy", "Type", "Stocks Traded", "Total Trades", "Target Hits", "Target Hit Rate (%)", "Avg P&L (%)"]]
-                            
-                            # Sort by Hit Rate DESC, Total Trades DESC
-                            leader_df_to_show = leader_df_to_show.sort_values(by=["Target Hit Rate (%)", "Total Trades"], ascending=[False, False]).reset_index(drop=True)
-                            badge_name = "Winning Strategies"
-                        else:
-                            leader_df_to_show = leader_df.copy()
-                            badge_name = "Stock-Strategy Combinations"
-                            
-                        # Filter or show highlights
-                        has_threshold = any(leader_df_to_show["Target Hit Rate (%)"] >= threshold_rate)
-                        matching_count = len(leader_df_to_show[leader_df_to_show["Target Hit Rate (%)"] >= threshold_rate])
-                        
-                        if has_threshold:
-                            st.success(f"🎉 **Success:** Found **{matching_count}** {badge_name} that achieved **{threshold_rate:.1f}%+ target hit rate**! (Highlighted in green)")
-                        else:
-                            st.info(f"ℹ️ No setups reached the {threshold_rate:.1f}% target hit rate. Showing top performers.")
-
-                        # Table styler
-                        def highlight_ld_rows(row):
-                            if row["Target Hit Rate (%)"] >= threshold_rate:
-                                return ["background-color: rgba(63, 185, 80, 0.18); border-left: 3px solid #3fb950;"] * len(row)
-                            return [""] * len(row)
-                            
-                        try:
-                            styled_ld = leader_df_to_show.style.apply(highlight_ld_rows, axis=1)
-                        except Exception:
-                            styled_ld = leader_df_to_show
-                            
-                        st.dataframe(
-                            styled_ld,
-                            column_config={
-                                "Target Hit Rate (%)": st.column_config.NumberColumn("Hit Rate", format="%.2f%%"),
-                                "Avg P&L (%)": st.column_config.NumberColumn("Avg P&L", format="%+.2f%%"),
-                                "Total Trades": st.column_config.NumberColumn("Total Trades"),
-                                "Target Hits": st.column_config.NumberColumn("Hits"),
-                                "Stocks Traded": st.column_config.NumberColumn("Stocks Count"),
-                            },
-                            hide_index=True,
-                            width='stretch'
-                        )
-                        
-                        st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-                        st.download_button(
-                            "📥 Export Leaderboard (CSV)",
-                            data=leader_df_to_show.to_csv(index=False).encode(),
-                            file_name=f"strategy_leaderboard_{datetime.date.today()}.csv",
-                            mime="text/csv",
-                            key="download_leaderboard_csv"
-                        )
 
     # ══════════════════════════════════════════════════════════════
-    # TAB 7 — Analysis History with validation + Broker stats
+    # TAB 6 — Analysis History with validation + Broker stats
     # ══════════════════════════════════════════════════════════════
-    with tab6:
+    with tab5:
         st.markdown("""
         <div class="infobox">
           <b>📜 Persistent Analysis History with Target/SL Validation</b><br>
