@@ -1080,15 +1080,6 @@ def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, sta
                     if intra_res:
                         intraday_picks.extend(intra_res)
                     intraday_backtest.extend(intra.backtest_intraday_10days(ticker, df))
-                    
-                    # Harmony Pattern Detection
-                    try:
-                        harmony_res = scr.detect_harmony_patterns(df)
-                        if harmony_res:
-                            harmony_res["Ticker"] = ticker
-                            matching.append(harmony_res)
-                    except Exception:
-                        pass
                 except Exception:
                     continue
 
