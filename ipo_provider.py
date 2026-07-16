@@ -474,6 +474,4 @@ def _assess_growth_potential(ipo: dict, sector: str, peer_analysis: dict) -> dic
         score += 5
         summary += " with healthy peer performance"
     
-    return {"score": score, "summary": summary}
-</｜｜DSML｜｜parameter>
-</write_to_file>
+    return {"score": score, "summary": summary}
