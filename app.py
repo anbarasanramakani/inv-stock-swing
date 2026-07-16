@@ -2116,7 +2116,7 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
         with col2:
             ipo_filter = st.selectbox(
                 "Filter IPOs by status",
-                ["All", "Upcoming", "Ongoing", "Listed"],
+                ["Ongoing & Upcoming", "Ongoing Only", "Upcoming Only", "Listed / Historical", "All"],
                 key="ipo_filter"
             )
         
@@ -2139,12 +2139,14 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
             </div>
             """, unsafe_allow_html=True)
         else:
-            # Filter IPOs
-            if ipo_filter == "Upcoming":
-                filtered = [i for i in ipo_list if i.get("status", "").lower() in ["upcoming", "open"]]
-            elif ipo_filter == "Ongoing":
-                filtered = [i for i in ipo_list if i.get("status", "").lower() == "ongoing"]
-            elif ipo_filter == "Listed":
+            # Filter IPOs (Ongoing & Upcoming is the default view)
+            if ipo_filter == "Ongoing & Upcoming":
+                filtered = [i for i in ipo_list if i.get("status", "").lower() in ["upcoming", "open", "ongoing"]]
+            elif ipo_filter == "Ongoing Only":
+                filtered = [i for i in ipo_list if i.get("status", "").lower() in ["ongoing", "open"]]
+            elif ipo_filter == "Upcoming Only":
+                filtered = [i for i in ipo_list if i.get("status", "").lower() == "upcoming"]
+            elif ipo_filter == "Listed / Historical":
                 filtered = [i for i in ipo_list if i.get("status", "").lower() in ["listed", "closed"]]
             else:
                 filtered = ipo_list
