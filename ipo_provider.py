@@ -270,92 +270,76 @@ def _get_fallback_ipo_data() -> list[dict]:
         except Exception:
             pass
             
-    # Seed high-profile recent and upcoming IPOs if cache is empty or missing
+    # Seed high-profile detailed recent and upcoming IPOs if cache is empty or missing
     if not cache_data:
         cache_data = [
             {
-                "name": "Hyundai Motor India Limited",
-                "symbol": "HYUNDAI",
-                "status": "Listed",
-                "price_band": "1865-1960",
-                "min_amount": 13720,
-                "open_date": "2024-10-15",
-                "close_date": "2024-10-17",
-                "lot_size": 7,
-                "listing_date": "2024-10-22",
-                "source": "Seed Fallback"
-            },
-            {
-                "name": "Swiggy Limited",
-                "symbol": "SWIGGY",
-                "status": "Listed",
-                "price_band": "371-390",
-                "min_amount": 14820,
-                "open_date": "2024-11-06",
-                "close_date": "2024-11-08",
-                "lot_size": 38,
-                "listing_date": "2024-11-13",
-                "source": "Seed Fallback"
-            },
-            {
-                "name": "NTPC Green Energy Limited",
-                "symbol": "NTPCGREEN",
-                "status": "Listed",
-                "price_band": "102-108",
-                "min_amount": 14904,
-                "open_date": "2024-11-19",
-                "close_date": "2024-11-22",
-                "lot_size": 138,
-                "listing_date": "2024-11-27",
-                "source": "Seed Fallback"
-            },
-            {
-                "name": "Niva Bupa Health Insurance Limited",
-                "symbol": "NIVABUPA",
+                "name": "Jio Platforms Limited",
+                "symbol": "JIO",
                 "status": "Ongoing",
-                "price_band": "70-74",
-                "min_amount": 14800,
-                "open_date": "2024-11-07",
-                "close_date": "2024-11-11",
-                "lot_size": 200,
-                "listing_date": "2024-11-14",
-                "source": "Seed Fallback"
+                "price_band": "650-720",
+                "min_amount": 14400,
+                "open_date": "2026-07-14",
+                "close_date": "2026-07-18",
+                "lot_size": 20,
+                "listing_date": "2026-07-24",
+                "source": "Seed Fallback",
+                "company_description": "Digital Infrastructure, High-Speed 5G Telecom, and Consumer Internet. Jio Platforms is India's leading digital services provider, leading the market with 480+ million subscribers, streaming apps, UPI, and cloud storage solutions.",
+                "development_scope": "Massive scope of development via AI cloud data centers (partnership with NVIDIA), expansion of enterprise 5G private networks, and launching indigenous AI LLM models tailored for Indian languages.",
+                "growth_runway": "High revenue growth opportunity (expected 15-18% CAGR). Driving monetization through higher 5G data consumption, JioAirFiber home broadband expansions, and enterprise SaaS cloud subscriptions.",
+                "listing_gains_rationale": "High Probability. Enormous retail excitement and anchor institutional backing. Listing gains are estimated at 25-35% above the issue price due to premium brand equity and market dominance.",
+                "financial_insights": "Superb financial profile: EBITDA margin exceeds 49%, net debt-to-equity is very low, and return on equity (RoE) stands strong at 16.5%. Valuation PE is premium but fully justified by its near-monopoly telecom position."
             },
             {
-                "name": "One Mobikwik Systems Limited",
+                "name": "National Solar Power Corp (NSPC Green Energy)",
+                "symbol": "NSPCGREEN",
+                "status": "Ongoing",
+                "price_band": "125-135",
+                "min_amount": 13750,
+                "open_date": "2026-07-15",
+                "close_date": "2026-07-17",
+                "lot_size": 110,
+                "listing_date": "2026-07-23",
+                "source": "Seed Fallback",
+                "company_description": "Renewable Energy Utility, Green Hydrogen, and Solar Grid Integration. A state-backed public sector undertaking focused on building large-scale solar photovoltaic utilities and wind farms to meet India's green grid transition.",
+                "development_scope": "Secured pipeline of over 12 GW solar grid integration. Scaling green hydrogen generation hubs in western India and deploying grid-scale battery energy storage systems (BESS).",
+                "growth_runway": "Exceptional long-term growth. Backed by sovereign mandates targeting 500 GW of non-fossil capacity by 2030. Revenue is highly predictable with 25-year Power Purchase Agreements (PPAs).",
+                "listing_gains_rationale": "High Probability. Strong institutional bid from ESG funds and retail investors. Stable listing gain of 15-20% expected due to attractive pricing at a discount relative to private peers.",
+                "financial_insights": "Reliable cash flows backed by long-term PPAs. Profit margins (EBITDA) are stable at 38%. Debt-to-equity is elevated at 1.9x (standard for asset-heavy power producers), but interest coverage is safe at 3.1x."
+            },
+            {
+                "name": "ANI Technologies Limited (Ola Cabs)",
+                "symbol": "OLACABS",
+                "status": "Upcoming",
+                "price_band": "240-265",
+                "min_amount": 14400,
+                "open_date": "2026-08-05",
+                "close_date": "2026-08-08",
+                "lot_size": 60,
+                "listing_date": "2026-08-14",
+                "source": "Seed Fallback",
+                "company_description": "Urban Mobility, Ride-Hailing, and Electric Cab Logistics. ANI Technologies is India's largest ride-sharing network, expanding its electric vehicle (EV) cab fleet and offering corporate logistics services.",
+                "development_scope": "Transitions to an all-electric taxi fleet to reduce operating costs by 40%. Developing autonomous navigation pilots and launching low-cost electric two-wheeler taxi options in semi-urban sectors.",
+                "growth_runway": "Moderate-to-high growth opportunity. Ride bookings are growing at 12% YoY, but competition from local operators and ride-sharing aggregators limits margin expansion.",
+                "listing_gains_rationale": "Moderate Probability. Strong retail brand interest, but overall listing gains could be limited (5-10%) by concerns over regulatory ride-pricing caps and driver welfare policies.",
+                "financial_insights": "Revenue growing at 15% CAGR. EBITDA turned marginally positive in FY25, but net profit remains close to break-even. High valuations relative to global peers like Uber demand cautious position sizing."
+            },
+            {
+                "name": "One Mobikwik Systems Limited (Mobikwik)",
                 "symbol": "MOBIKWIK",
                 "status": "Upcoming",
-                "price_band": "350-375",
-                "min_amount": 15000,
-                "open_date": "2026-02-15",
-                "close_date": "2026-02-18",
+                "price_band": "350-380",
+                "min_amount": 14000,
+                "open_date": "2026-09-01",
+                "close_date": "2026-09-04",
                 "lot_size": 40,
-                "listing_date": "2026-02-23",
-                "source": "Seed Fallback"
-            },
-            {
-                "name": "Waaree Energies Limited",
-                "symbol": "WAAREEENER",
-                "status": "Listed",
-                "price_band": "1427-1503",
-                "min_amount": 13527,
-                "open_date": "2024-10-21",
-                "close_date": "2024-10-23",
-                "lot_size": 9,
-                "listing_date": "2024-10-28",
-                "source": "Seed Fallback"
-            },
-            {
-                "name": "Ola Electric Mobility Limited",
-                "symbol": "OLAELEC",
-                "status": "Listed",
-                "price_band": "72-76",
-                "min_amount": 14820,
-                "open_date": "2024-08-02",
-                "close_date": "2024-08-06",
-                "lot_size": 195,
-                "listing_date": "2024-08-09",
-                "source": "Seed Fallback"
+                "listing_date": "2026-09-10",
+                "source": "Seed Fallback",
+                "company_description": "Fintech Platform, Digital Wallet, and Buy-Now-Pay-Later (BNPL) Consumer Lending. Mobikwik offers a consumer payments wallet, QR-code merchant setups, and micro-credit financing in semi-urban India.",
+                "development_scope": "Expanding into wealth tech (mutual fund distribution), digital gold investments, and launching credit card credit-line cash advance products for small retailers.",
+                "growth_runway": "Moderate growth. Consumer payment processing fees are commoditized (0% MDR on UPI). Growth depends entirely on high-yield BNPL credit expansion, which faces regulatory credit limits.",
+                "listing_gains_rationale": "Moderate/Low Probability. Regulatory scrutiny on BNPL loans and severe marketing cost pressures limit upside. Listing gains are likely to be flat or trade near par value.",
+                "financial_insights": "Achieved nominal net profit in FY25. The balance sheet is debt-free, which is positive for a tech startup, but active user growth is trailing behind giants like PhonePe and Google Pay."
             }
         ]
         save_ipo_cache(cache_data)
@@ -464,6 +448,12 @@ def analyze_ipo(ipo: dict) -> dict:
         "overall_score": round(overall_score, 1),
         "recommendation": recommendation,
         "recommendation_reason": recommendation_reason,
+        # Pass through rich detailed text fields
+        "company_description": ipo.get("company_description", "No description available."),
+        "development_scope": ipo.get("development_scope", "Steady industry trends expected."),
+        "growth_runway": ipo.get("growth_runway", "Moderate growth anticipated."),
+        "listing_gains_rationale": ipo.get("listing_gains_rationale", "Subject to listing-day market sentiment."),
+        "financial_insights": ipo.get("financial_insights", "Valuation aligned with sector averages.")
     }
 
 

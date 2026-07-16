@@ -2242,6 +2242,36 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                     </div>
                     """, unsafe_allow_html=True)
 
+                    # Expandable detailed profile & financials
+                    with st.expander(f"🔍 Deep Analysis & Financial Profile for {ipo_analysis.get('name')}"):
+                        st.markdown(f"### 🏢 Company Overview & Business Model")
+                        st.markdown(ipo_analysis.get("company_description"))
+                        
+                        col_runway, col_scope = st.columns(2)
+                        with col_runway:
+                            st.markdown(f"#### 💰 Revenue Growth Runway")
+                            st.markdown(ipo_analysis.get("growth_runway"))
+                        with col_scope:
+                            st.markdown(f"#### 📈 Scope of Development")
+                            st.markdown(ipo_analysis.get("development_scope"))
+                            
+                        st.markdown("---")
+                        
+                        col_gains, col_fin = st.columns(2)
+                        with col_gains:
+                            st.markdown(f"#### 🚀 Listing Gain Possibilities")
+                            st.markdown(ipo_analysis.get("listing_gains_rationale"))
+                        with col_fin:
+                            st.markdown(f"#### 📊 Valuation & Financial Insights")
+                            st.markdown(ipo_analysis.get("financial_insights"))
+                            
+                        st.markdown("---")
+                        st.markdown(f"**🎯 Final Recommendation:** {ipo_analysis.get('recommendation_reason')}")
+                        st.markdown(f"<span style='color:{rec_color}; font-size:1.1rem; font-weight:800; background:{rec_bg}; border:1px solid {border_color}; border-radius:4px; padding:4px 12px;'>{rec} (Overall Score: {ipo_analysis.get('overall_score')}/100)</span>", unsafe_allow_html=True)
+                        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+                    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
                 # Table view
                 st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
                 st.markdown("### 📋 All IPO Analysis Table")
