@@ -503,6 +503,16 @@ import intraday_screener as intra
 import analysis_history as hist
 import ipo_provider as ipo
 
+# Multi-tier persistent cache (survives Streamlit Cloud restarts/deploys)
+try:
+    import persistent_cache as pcache
+    # Migrate legacy cache files into persistent storage on first run
+    pcache.migrate_legacy_caches()
+    _HAS_PCACHE = True
+except ImportError:
+    pcache = None
+    _HAS_PCACHE = False
+
 # NOTE: importlib.reload() calls were intentionally removed.
 # Reloading modules on every Streamlit re-run destroys the in-process
 # _IND_CACHE memoization in screeners.py, forcing the expensive Supertrend
