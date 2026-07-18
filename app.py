@@ -2105,8 +2105,9 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
         st.markdown("""
         <div class="infobox">
           <b>💰 IPO Watch — In Progress, Upcoming & Recently Listed</b><br>
-          Comprehensive IPO analysis including sector/domain classification, financial peer comparison, 
-          listing gain probability assessment, growth opportunity evaluation, and final recommendation.
+          Comprehensive IPO analysis with <b>multi-source data</b> (Chittorgarh, Moneycontrol, Trendlyne, NSE API).<br>
+          Includes: Grey Market Premium (GMP) tracking · News/Social Media sentiment · Peer valuation comparison · 
+          Company website & draft paper (SEBI RHP) search · Financial scoring · Final recommendation.
         </div>
         """, unsafe_allow_html=True)
         
@@ -2117,29 +2118,30 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
             ipo_filter = st.selectbox(
                 "Filter IPOs by status",
                 ["Ongoing & Upcoming", "Ongoing Only", "Upcoming Only", "Listed / Historical", "All"],
-                key="ipo_filter_v5"
+                key="ipo_filter_v6"
             )
         
         # Load IPO data (forced refresh via new cache key)
-        if refresh_ipos or "ipo_list_v5" not in st.session_state:
-            with st.spinner("Fetching Real-Time IPO data from live trackers..."):
+        if refresh_ipos or "ipo_list_v6" not in st.session_state:
+            with st.spinner("🔄 Fetching Real-Time IPO data from Chittorgarh, Moneycontrol, Trendlyne, NSE API..."):
                 ipo_list = ipo.get_live_ipos()
-                st.session_state.ipo_list_v5 = ipo_list
+                st.session_state.ipo_list_v6 = ipo_list
+                st.toast(f"✅ Loaded {len(ipo_list)} IPOs from multiple sources", icon="📋")
         
-        ipo_list = st.session_state.get("ipo_list_v5", [])
+        ipo_list = st.session_state.get("ipo_list_v6", [])
         
         if not ipo_list:
-            st.warning("No IPO data available. IPO data will appear once fetched from NSE API.")
-            # Show sample structure
+            st.warning("⚠️ No IPO data available yet. The system fetches from 4 sources. Click 'Refresh IPO Data' to retry.")
             st.markdown("""
             <div style="padding:20px; text-align:center; color:#5a7a9a;">
                 <div style="font-size:2rem;margin-bottom:10px;">📋</div>
-                <div>IPO data loads automatically when the NSE API is available.<br>
-                The system will analyze each IPO for sector, valuation, listing gains, and growth potential.</div>
+                <div>IPO data loads from multiple live trackers (Chittorgarh, Moneycontrol, Trendlyne, NSE).<br>
+                Once loaded, each IPO is analyzed for <b style="color:#dde5f0;">sector, valuation, GMP, news sentiment,</b><br>
+                <b style="color:#dde5f0;">peer comparison, listing gains, growth potential</b>, and given a final recommendation.</div>
             </div>
             """, unsafe_allow_html=True)
         else:
-            # Filter IPOs (Ongoing & Upcoming is the default view)
+            # Filter IPOs
             if ipo_filter == "Ongoing & Upcoming":
                 filtered = [i for i in ipo_list if i.get("status", "").lower() in ["upcoming", "open", "ongoing"]]
             elif ipo_filter == "Ongoing Only":
@@ -2151,25 +2153,30 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
             else:
                 filtered = ipo_list
             
-            # Analyze all IPOs
+            # Analyze all IPOs with progress indicator
             analyzed_ipos = []
-            for ipo_item in filtered:
-                try:
-                    analysis = ipo.analyze_ipo(ipo_item)
-                    analyzed_ipos.append(analysis)
-                except Exception:
-                    analyzed_ipos.append({
-                        "name": ipo_item.get("name", "Unknown"),
-                        "sector": "N/A", "status": ipo_item.get("status", "Unknown"),
-                        "recommendation": "N/A",
-                    })
+            with st.status(f"📊 Analyzing {len(filtered)} IPOs with GMP, news, peers...", expanded=False) as analysis_status:
+                for idx, ipo_item in enumerate(filtered):
+                    try:
+                        analysis = ipo.analyze_ipo(ipo_item)
+                        analyzed_ipos.append(analysis)
+                        if (idx + 1) % 3 == 0:
+                            analysis_status.update(label=f"Analyzed {idx+1}/{len(filtered)} IPOs...")
+                    except Exception as e:
+                        print(f"[IPO Analysis Error] {ipo_item.get('name', 'Unknown')}: {e}")
+                        analyzed_ipos.append({
+                            "name": ipo_item.get("name", "Unknown"),
+                            "sector": "N/A", "status": ipo_item.get("status", "Unknown"),
+                            "recommendation": "N/A", "overall_score": 0,
+                        })
+                analysis_status.update(label=f"✅ Analysis complete for {len(analyzed_ipos)} IPOs", state="complete")
             
             if not analyzed_ipos:
                 st.info(f"No IPOs found matching filter: {ipo_filter}")
             else:
                 # Metrics summary
                 st.markdown("### 📊 IPO Market Summary")
-                mc1, mc2, mc3, mc4 = st.columns(4)
+                mc1, mc2, mc3, mc4, mc5 = st.columns(5)
                 with mc1:
                     strong_buys = sum(1 for a in analyzed_ipos if a.get("recommendation") == "STRONG BUY")
                     st.metric("STRONG BUY", strong_buys)
@@ -2177,11 +2184,14 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                     buys = sum(1 for a in analyzed_ipos if a.get("recommendation") == "BUY")
                     st.metric("BUY", buys)
                 with mc3:
-                    holds = sum(1 for a in analyzed_ipos if "HOLD" in a.get("recommendation", ""))
-                    st.metric("HOLD / SUBSCRIBE", holds)
+                    subscribes = sum(1 for a in analyzed_ipos if a.get("recommendation") == "SUBSCRIBE")
+                    st.metric("SUBSCRIBE", subscribes)
                 with mc4:
                     avoids = sum(1 for a in analyzed_ipos if a.get("recommendation") in ("AVOID", "SKIP"))
                     st.metric("AVOID / SKIP", avoids)
+                with mc5:
+                    gmp_available = sum(1 for a in analyzed_ipos if a.get("gmp", 0) > 0)
+                    st.metric("GMP Available", gmp_available)
                 
                 st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
                 
@@ -2194,22 +2204,40 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                     elif rec == "BUY":
                         rec_color, rec_bg = "#3fb950", "rgba(63,185,80,0.1)"
                         border_color = "rgba(63,185,80,0.25)"
-                    elif "HOLD" in rec:
+                    elif rec == "SUBSCRIBE":
                         rec_color, rec_bg = "#ffa657", "rgba(255,166,87,0.1)"
                         border_color = "rgba(255,166,87,0.25)"
                     else:
                         rec_color, rec_bg = "#f85149", "rgba(248,81,73,0.1)"
                         border_color = "rgba(248,81,73,0.25)"
                     
+                    # GMP badge
+                    gmp_val = ipo_analysis.get("gmp", 0)
+                    listing_pct = ipo_analysis.get("listing_gain_pct", 0)
+                    gmp_badge = f'<span class="pill pill-tgt">GMP: ₹{gmp_val:.0f} ({listing_pct:.0f}%)</span>' if gmp_val > 0 else ""
+                    
+                    # Sentiment badge
+                    sentiment = ipo_analysis.get("sentiment", {})
+                    sent_label = sentiment.get("label", "Neutral")
+                    sent_badge = f'<span class="pill pill-tgt" style="color:{"#00c853" if sent_label=="Positive" else "#ff4d4d" if sent_label=="Negative" else "#a78bfa"};">📰 {sent_label}</span>' if sentiment.get("total_items", 0) > 0 else ""
+                    
+                    # Peer count badge
+                    peers = ipo_analysis.get("peer_analysis", {})
+                    peer_badge = f'<span class="pill" style="color:#38bdf8;">📊 {peers.get("peers_found", 0)} peers</span>' if peers.get("peers_found", 0) > 0 else ""
+                    
                     st.markdown(f"""
-                    <div style="background:#08111e;border:1px solid {border_color};border-radius:10px;padding:16px 18px;margin-bottom:12px;position:relative;overflow:hidden;">
+                    <div class="terminal-card" style="border:1px solid {border_color};">
+                      <div class="left-bar" style="background:{rec_color};"></div>
                       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
                         <div style="flex:1;min-width:200px;">
                           <div style="font-size:1.05rem;font-weight:800;color:#f0f6ff;">{ipo_analysis.get('name','')}</div>
-                          <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+                          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
                             <span class="pill">{ipo_analysis.get('sector','N/A')}</span>
                             <span class="pill">{ipo_analysis.get('status','N/A')}</span>
                             <span class="pill">{ipo_analysis.get('price_band','N/A')}</span>
+                            {gmp_badge}
+                            {sent_badge}
+                            {peer_badge}
                           </div>
                         </div>
                         <div style="text-align:right;">
@@ -2220,25 +2248,31 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                           <div style="font-size:0.68rem;color:#5a7a9a;margin-top:4px;">Score: {ipo_analysis.get('overall_score',0)}/100</div>
                         </div>
                       </div>
-                      <div style="margin-top:12px;display:flex;gap:16px;flex-wrap:wrap;border-top:1px solid #0d1f35;padding-top:10px;">
+                      <div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;border-top:1px solid #0d1f35;padding-top:9px;">
                         <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Listing Gain</span><br>
                              <span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('listing_gain_probability','N/A')} ({ipo_analysis.get('listing_gain_score',0)})</span></div>
                         <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Growth</span><br>
                              <span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('growth_score',0)}/100</span></div>
-                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Assessment</span><br>
-                             <span style="font-size:0.7rem;color:#8aaccc;">{ipo_analysis.get('growth_assessment','')[:100]}</span></div>
-                        <div style="flex:1;text-align:right;">
-                          <span style="font-size:0.7rem;color:#8aaccc;">{ipo_analysis.get('recommendation_reason','')}</span>
-                        </div>
+                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Financials</span><br>
+                             <span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('financial_score',0)}/100</span></div>
+                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Valuation</span><br>
+                             <span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('valuation_score',0)}/100</span></div>
+                      </div>
+                      <div style="margin-top:6px;font-size:0.72rem;color:#8aaccc;line-height:1.6;">
+                        {ipo_analysis.get('recommendation_reason','')}
                       </div>
                       {f'''
-                      <div style="margin-top:8px;display:flex;gap:16px;flex-wrap:wrap;border-top:1px solid #0d1f35;padding-top:8px;">
+                      <div style="margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;border-top:1px solid #0d1f35;padding-top:8px;">
                         <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Open</span><br>
                              <span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('open_date','N/A')}</span></div>
                         <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Close</span><br>
                              <span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('close_date','N/A')}</span></div>
                         <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Listing</span><br>
                              <span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('listing_date','N/A')}</span></div>
+                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Lot Size</span><br>
+                             <span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('lot_size','N/A')}</span></div>
+                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Min Amount</span><br>
+                             <span style="font-size:0.72rem;color:#dde5f0;">₹{ipo_analysis.get('min_amount',0):,.0f}</span></div>
                       </div>
                       ''' if ipo_analysis.get('open_date') else ''}
                     </div>
@@ -2246,8 +2280,27 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
 
                     # Expandable detailed profile & financials
                     with st.expander(f"🔍 Deep Analysis & Financial Profile for {ipo_analysis.get('name')}"):
-                        st.markdown(f"### 🏢 Company Overview & Business Model")
+                        # Company Overview
+                        st.markdown("### 🏢 Company Overview & Business Model")
                         st.markdown(ipo_analysis.get("company_description"))
+                        
+                        # Peer Comparison (if available)
+                        peer_analysis = ipo_analysis.get("peer_analysis", {})
+                        if peer_analysis.get("peers"):
+                            st.markdown("#### 📊 Peer Comparison (Listed Comparable Companies)")
+                            peer_df = pd.DataFrame(peer_analysis["peers"])
+                            if not peer_df.empty:
+                                st.dataframe(
+                                    peer_df.style.format({
+                                        "pe": "{:.2f}x", "revenue_growth": "{:.2f}%",
+                                        "roe": "{:.2f}%", "market_cap_cr": "₹{:,.0f} Cr"
+                                    }),
+                                    column_config={
+                                        "symbol": "Ticker", "pe": "P/E", "revenue_growth": "Rev Growth",
+                                        "roe": "ROE", "market_cap_cr": "Market Cap",
+                                    },
+                                    hide_index=True, width='stretch',
+                                )
                         
                         col_runway, col_scope = st.columns(2)
                         with col_runway:
@@ -2262,23 +2315,64 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                         col_gains, col_fin = st.columns(2)
                         with col_gains:
                             st.markdown(f"#### 🚀 Listing Gain Possibilities")
+                            # GMP highlight
+                            if gmp_val > 0:
+                                st.markdown(f"<div style='background:rgba(0,200,83,0.08);border:1px solid rgba(0,200,83,0.2);border-radius:6px;padding:8px 12px;margin-bottom:8px;'>"
+                                          f"<span style='color:#00c853;font-weight:800;font-size:1.1rem;'>GMP: ₹{gmp_val:.0f}</span>"
+                                          f"<span style='color:#8aaccc;font-size:0.85rem;margin-left:10px;'>~{listing_pct:.0f}% listing premium</span></div>",
+                                          unsafe_allow_html=True)
                             st.markdown(ipo_analysis.get("listing_gains_rationale"))
                         with col_fin:
                             st.markdown(f"#### 📊 Valuation & Financial Insights")
                             st.markdown(ipo_analysis.get("financial_insights"))
-                            
+                        
+                        st.markdown("---")
+                        
+                        # Score breakdown
+                        st.markdown("#### 📈 Score Breakdown")
+                        s1, s2, s3, s4, s5 = st.columns(5)
+                        with s1:
+                            st.metric("Listing Score", f"{ipo_analysis.get('listing_gain_score',0)}/100")
+                        with s2:
+                            st.metric("Growth Score", f"{ipo_analysis.get('growth_score',0)}/100")
+                        with s3:
+                            st.metric("Financial Score", f"{ipo_analysis.get('financial_score',0)}/100")
+                        with s4:
+                            st.metric("Valuation Score", f"{ipo_analysis.get('valuation_score',0)}/100")
+                        with s5:
+                            st.metric("Overall", f"{ipo_analysis.get('overall_score',0)}/100",
+                                     delta=ipo_analysis.get('recommendation', ''))
+                        
                         st.markdown("---")
                         st.markdown(f"**🎯 Final Recommendation:** {ipo_analysis.get('recommendation_reason')}")
                         st.markdown(f"<span style='color:{rec_color}; font-size:1.1rem; font-weight:800; background:{rec_bg}; border:1px solid {border_color}; border-radius:4px; padding:4px 12px;'>{rec} (Overall Score: {ipo_analysis.get('overall_score')}/100)</span>", unsafe_allow_html=True)
                         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
                         
+                        # Live news & aggregation
                         live_news = ipo_analysis.get("live_news", [])
                         if live_news:
                             st.markdown("---")
                             st.markdown("#### 📰 Live News & Web Aggregation")
-                            st.markdown("<span style='font-size:0.8rem; color:#8aaccc;'>Real-time headlines fetched directly from external news channels and social media.</span>", unsafe_allow_html=True)
+                            st.markdown("<span style='font-size:0.8rem; color:#8aaccc;'>Real-time headlines, draft paper links, and social media sentiment from multiple sources.</span>", unsafe_allow_html=True)
+                            
                             for news in live_news:
-                                st.markdown(f"• [{news.get('title')}]({news.get('link')})")
+                                news_type = news.get("type", "news")
+                                
+                                # Icon by type
+                                type_icon = "📰" if news_type == "news" else "🌐" if news_type == "website" else "🐦" if news_type == "social" else "📄"
+                                source_label = news.get("source", "News")
+                                
+                                st.markdown(f"""<div style="background:rgba(0,102,204,0.04);border:1px solid #0d1f35;border-radius:6px;padding:8px 12px;margin-bottom:6px;border-left:3px solid #0066cc;">
+                                <div style="display:flex;justify-content:space-between;font-size:0.65rem;color:#5a7a9a;margin-bottom:3px;">
+                                <span>{type_icon} {source_label} · {news.get('date','')}</span>
+                                <span style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.05em;">{news_type.replace('_',' ')}</span>
+                                </div>
+                                <div style="font-size:0.8rem;color:#dde5f0;">
+                                <a href="{news.get('link','')}" target="_blank" style="color:#38bdf8;text-decoration:none;">{news.get('title','')}</a>
+                                </div>
+                                </div>""", unsafe_allow_html=True)
+                        else:
+                            st.markdown("<div style='color:#5a7a9a;font-size:0.8rem;'>No news articles found for this IPO.</div>", unsafe_allow_html=True)
 
                     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
@@ -2293,10 +2387,13 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                         "Sector": a.get("sector", ""),
                         "Status": a.get("status", ""),
                         "Price Band": a.get("price_band", ""),
-                        "Recommendation": a.get("recommendation", ""),
-                        "Overall Score": a.get("overall_score", 0),
-                        "Listing Gain": a.get("listing_gain_probability", ""),
-                        "Growth Score": a.get("growth_score", 0),
+                        "GMP": f"₹{a.get('gmp',0):.0f}" if a.get("gmp",0) > 0 else "N/A",
+                        "Rec.": a.get("recommendation", ""),
+                        "Score": a.get("overall_score", 0),
+                        "Listing": a.get("listing_gain_probability", ""),
+                        "Growth": a.get("growth_score", 0),
+                        "Financial": a.get("financial_score", 0),
+                        "News": a.get("sentiment", {}).get("label", ""),
                     })
                 
                 if ipo_table_data:
@@ -2304,11 +2401,21 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                     st.dataframe(
                         ipo_df,
                         column_config={
-                            "Overall Score": st.column_config.NumberColumn("Score", format="%.1f"),
-                            "Growth Score": st.column_config.NumberColumn("Growth", format="%.1f"),
+                            "Score": st.column_config.NumberColumn("Score", format="%.1f"),
+                            "Growth": st.column_config.NumberColumn("Growth", format="%.1f"),
+                            "Financial": st.column_config.NumberColumn("Financial", format="%.1f"),
                         },
                         hide_index=True,
-                        width='stretch'
+                        width='stretch',
+                    )
+                    
+                    st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+                    st.download_button(
+                        "📥 Export IPO Analysis (CSV)",
+                        data=ipo_df.to_csv(index=False).encode(),
+                        file_name=f"ipo_analysis_{datetime.date.today()}.csv",
+                        mime="text/csv",
+                        key="download_ipo_csv"
                     )
 
     # ══════════════════════════════════════════════════════════════

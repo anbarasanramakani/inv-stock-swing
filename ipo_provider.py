@@ -3,14 +3,27 @@ ipo_provider.py
 IPO Analysis module — fetches NSE IPO data, company fundamentals & recommendations.
 Provides in-depth IPO analysis with domain classification, financial insights,
 growth prospects, listing gain probabilities, and final recommendations.
+
+Major improvements:
+  - Multi-source IPO data: Chittorgarh, moneycontrol, trendlyne, NSE API
+  - Real financial analysis from RHP/DRHP filings
+  - Multi-source news aggregation (Google News, Moneycontrol, Economic Times, Livemint, Business Standard)
+  - Social media sentiment from Twitter/X trends and StockTwits
+  - Company website content analysis
+  - Grey Market Premium (GMP) tracking for listing gain estimates
+  - IPO draft paper (RHP) analysis via SEBI filings
+  - Real peer comparison with listed comparable companies
+  - Proper recommendation engine with weighted scoring
 """
 import requests
 import json
 import datetime
 import re
-from typing import Optional
+import os
+import time
+import hashlib
+from typing import Optional, List, Dict, Any
 from bs4 import BeautifulSoup
-
 import pandas as pd
 import numpy as np
 
@@ -19,6 +32,7 @@ try:
     _HAS_STREAMLIT = True
 except ImportError:
     _HAS_STREAMLIT = False
+
 
 def _cache_data_decorator(ttl=3600):
     def decorator(fn):
@@ -29,138 +43,1430 @@ def _cache_data_decorator(ttl=3600):
 
 
 # ---------------------------------------------------------------------------
-# NSE IPO Data Sources
+# Constants & Configuration
 # ---------------------------------------------------------------------------
-_NSE_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "application/json, text/plain, */*",
-}
-
-# Cache file
-_IPO_CACHE_PATH = None
-import os
 _DIR = os.path.dirname(os.path.abspath(__file__))
 _IPO_CACHE_PATH = os.path.join(_DIR, "ipo_cache.json")
+_GMP_CACHE_PATH = os.path.join(_DIR, "ipo_gmp_cache.json")
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 
 # ---------------------------------------------------------------------------
-# Domain / Sector Classification Map
+# Industry / Sector Classification via Keywords (expanded)
 # ---------------------------------------------------------------------------
-_NSE_SECTOR_MAP = {
-    # IT / Technology
-    "INFY": "IT", "TCS": "IT", "WIPRO": "IT", "HCLTECH": "IT", "TECHM": "IT",
-    "LTIMINDTREE": "IT", "MPHASIS": "IT", "COFORGE": "IT", "PERSISTENT": "IT",
-    "OFSS": "IT", "BSOFT": "IT", "KPITTECH": "IT", "LTTS": "IT",
-    "MINDTREE": "IT", "NIITTECH": "IT", "HEXAWARE": "IT", "CYIENT": "IT",
-    "LTI": "IT", "MINDA": "IT",
+def classify_sector_by_name(company_name: str) -> str:
+    """Classify company into a sector/domain based on its name and keywords."""
+    name_lower = company_name.lower()
+    
+    sector_keywords = {
+        "IT / TECHNOLOGY": [
+            "tech", "soft", "digital", "system", "consultancy", "solution", "info",
+            "cyber", "data", "cloud", "saas", "software", "comput", "network",
+            "semicon", "chip", "electronics", "ai ", "machine learning", "iot",
+            "blockchain", "robotic", "automation"
+        ],
+        "PHARMA / HEALTHCARE": [
+            "pharma", "biotech", "life science", "health", "hospital", "clinic",
+            "med", "diagnostic", "therapeut", "drug", "vaccine", "bio",
+            "surgical", "cardiac", "dental", "wellness", "ayurveda"
+        ],
+        "BANKING / FINANCE": [
+            "bank", "finance", "capital", "wealth", "credit", "invest",
+            "insurance", "assurance", "broking", "housing finance", "nbfc",
+            "microfin", "lending", "asset management", "mutual fund"
+        ],
+        "INFRASTRUCTURE": [
+            "infra", "construction", "road", "build", "engineer", "project",
+            "rail", "metro", "bridge", "tunnel", "cement", "steel struct",
+            "realty", "real estate", "property", "developer", "housing"
+        ],
+        "ENERGY / POWER": [
+            "solar", "wind", "green", "renewable", "power", "energy",
+            "electric", "utility", "thermal", "hydro", "biomass", "grid"
+        ],
+        "FMCG / CONSUMER": [
+            "food", "beverage", "consumer", "retail", "mart", "milk", "dairy",
+            "snack", "packaged", "personal care", "cosmetic", "brand",
+            "fashion", "apparel", "textile", "garment"
+        ],
+        "METALS / MINING": [
+            "metal", "steel", "iron", "copper", "aluminum", "mine", "mineral",
+            "alloy", "foundry", "forging", "cast"
+        ],
+        "TELECOM / MEDIA": [
+            "telecom", "telecommunication", "broadband", "media", "entertainment",
+            "broadcast", "publishing", "advert", "digital media", "ott"
+        ],
+        "LOGISTICS / TRANSPORT": [
+            "logistic", "transport", "shipping", "warehouse", "courier",
+            "freight", "supply chain", "cargo", "port", "terminal"
+        ],
+        "AGRICULTURE / AGRO": [
+            "agriculture", "agro", "farm", "fertilizer", "seed", "pesticide",
+            "irrigation", "food process", "sugar", "rice", "wheat"
+        ],
+        "AUTO / AUTO ANCILLARY": [
+            "auto", "automotive", "motor", "vehicle", "tyre", "tire",
+            "battery", "component", "spare", "ancillar"
+        ],
+        "HOSPITALITY / TOURISM": [
+            "hotel", "hospitality", "resort", "tourism", "travel", "restaurant",
+            "leisure", "entertainment"
+        ],
+        "EDUCATION": [
+            "education", "learning", "skill", "training", "coaching",
+            "school", "college", "university", "edtech", "e-learning"
+        ],
+        "DEFENCE / AEROSPACE": [
+            "defence", "defense", "aero", "space", "aerospace", "drone",
+            "missile", "ammunition", "security"
+        ],
+    }
+    
+    for sector, keywords in sector_keywords.items():
+        for kw in keywords:
+            if kw in name_lower:
+                return sector
+    
+    return "OTHER / DIVERSIFIED"
+
+
+# ---------------------------------------------------------------------------
+# Extended sector synonyms for mapped stocks
+# ---------------------------------------------------------------------------
+_SECTOR_MAP = {
+    # IT
+    "INFY": "IT / TECHNOLOGY", "TCS": "IT / TECHNOLOGY", "WIPRO": "IT / TECHNOLOGY",
+    "HCLTECH": "IT / TECHNOLOGY", "TECHM": "IT / TECHNOLOGY", "LTIMINDTREE": "IT / TECHNOLOGY",
+    "MPHASIS": "IT / TECHNOLOGY", "COFORGE": "IT / TECHNOLOGY", "PERSISTENT": "IT / TECHNOLOGY",
+    "OFSS": "IT / TECHNOLOGY", "BSOFT": "IT / TECHNOLOGY", "KPITTECH": "IT / TECHNOLOGY",
+    "LTTS": "IT / TECHNOLOGY", "HEXAWARE": "IT / TECHNOLOGY", "CYIENT": "IT / TECHNOLOGY",
+    "ZENSARTECH": "IT / TECHNOLOGY", "TATAELXSI": "IT / TECHNOLOGY",
     # Pharma / Healthcare
-    "SUNPHARMA": "PHARMA", "DRREDDY": "PHARMA", "CIPLA": "PHARMA",
-    "DIVISLAB": "PHARMA", "AUROPHARMA": "PHARMA", "LUPIN": "PHARMA",
-    "ZYDUSLIFE": "PHARMA", "TORNTPHARM": "PHARMA", "ALKEM": "PHARMA",
-    "APOLLOHOSP": "HEALTHCARE", "ABBOTINDIA": "PHARMA", "BIOCON": "PHARMA",
-    "GLENMARK": "PHARMA", "GRANULES": "PHARMA", "METROPOLIS": "HEALTHCARE",
-    "FORTIS": "HEALTHCARE", "NATCOPHARM": "PHARMA", "IPCALAB": "PHARMA",
-    "LAURUSLABS": "PHARMA", "SYNGENE": "PHARMA",
-    # Banking & Financial Services
-    "HDFCBANK": "BANKING", "ICICIBANK": "BANKING", "SBIN": "BANKING",
-    "KOTAKBANK": "BANKING", "AXISBANK": "BANKING", "INDUSINDBK": "BANKING",
-    "BANKBARODA": "BANKING", "PNB": "BANKING", "FEDERALBNK": "BANKING",
-    "YESBANK": "BANKING", "IDFCFIRSTB": "BANKING", "IDBI": "BANKING",
-    "RBLBANK": "BANKING", "BANDHANBNK": "BANKING", "AUBANK": "BANKING",
-    "BAJFINANCE": "FINANCIAL", "BAJAJFINSV": "FINANCIAL", "HDFCLIFE": "INSURANCE",
-    "SBILIFE": "INSURANCE", "LICI": "INSURANCE", "ICICIPRULI": "INSURANCE",
-    "ICICIGI": "INSURANCE", "HDFCAMC": "FINANCIAL", "MUTHOOTFIN": "FINANCIAL",
-    "SHRIRAMFIN": "FINANCIAL", "CHOLAFIN": "FINANCIAL", "PFC": "FINANCIAL",
-    "RECLTD": "FINANCIAL", "L&TFH": "FINANCIAL", "SBICARD": "FINANCIAL",
-    "MANAPPURAM": "FINANCIAL", "MFSL": "FINANCIAL",
-    # Auto & Auto Ancillaries
-    "TATAMOTORS": "AUTO", "M&M": "AUTO", "MARUTI": "AUTO",
-    "BAJAJ-AUTO": "AUTO", "HEROMOTOCO": "AUTO", "EICHERMOT": "AUTO",
-    "ASHOKLEY": "AUTO", "TVSMOTOR": "AUTO", "BALKRISIND": "AUTO",
-    "BOSCHLTD": "AUTO", "MOTHERSON": "AUTO", "APOLLOTYRE": "AUTO",
-    "MRF": "AUTO", "EXIDEIND": "AUTO", "ESCORTS": "AUTO",
+    "SUNPHARMA": "PHARMA / HEALTHCARE", "DRREDDY": "PHARMA / HEALTHCARE",
+    "CIPLA": "PHARMA / HEALTHCARE", "DIVISLAB": "PHARMA / HEALTHCARE",
+    "AUROPHARMA": "PHARMA / HEALTHCARE", "LUPIN": "PHARMA / HEALTHCARE",
+    "ZYDUSLIFE": "PHARMA / HEALTHCARE", "TORNTPHARM": "PHARMA / HEALTHCARE",
+    "ALKEM": "PHARMA / HEALTHCARE", "APOLLOHOSP": "PHARMA / HEALTHCARE",
+    "ABBOTINDIA": "PHARMA / HEALTHCARE", "BIOCON": "PHARMA / HEALTHCARE",
+    "GLENMARK": "PHARMA / HEALTHCARE", "GRANULES": "PHARMA / HEALTHCARE",
+    "METROPOLIS": "PHARMA / HEALTHCARE", "FORTIS": "PHARMA / HEALTHCARE",
+    "NATCOPHARM": "PHARMA / HEALTHCARE", "IPCALAB": "PHARMA / HEALTHCARE",
+    "LAURUSLABS": "PHARMA / HEALTHCARE", "SYNGENE": "PHARMA / HEALTHCARE",
+    # Banking
+    "HDFCBANK": "BANKING / FINANCE", "ICICIBANK": "BANKING / FINANCE",
+    "SBIN": "BANKING / FINANCE", "KOTAKBANK": "BANKING / FINANCE",
+    "AXISBANK": "BANKING / FINANCE", "INDUSINDBK": "BANKING / FINANCE",
+    "BANKBARODA": "BANKING / FINANCE", "PNB": "BANKING / FINANCE",
+    "FEDERALBNK": "BANKING / FINANCE", "YESBANK": "BANKING / FINANCE",
+    "IDFCFIRSTB": "BANKING / FINANCE", "RBLBANK": "BANKING / FINANCE",
+    "AUBANK": "BANKING / FINANCE", "IDBI": "BANKING / FINANCE",
+    # Financial Services
+    "BAJFINANCE": "BANKING / FINANCE", "BAJAJFINSV": "BANKING / FINANCE",
+    "HDFCLIFE": "BANKING / FINANCE", "SBILIFE": "BANKING / FINANCE",
+    "LICI": "BANKING / FINANCE", "ICICIPRULI": "BANKING / FINANCE",
+    "ICICIGI": "BANKING / FINANCE", "HDFCAMC": "BANKING / FINANCE",
+    "MUTHOOTFIN": "BANKING / FINANCE", "SHRIRAMFIN": "BANKING / FINANCE",
+    "CHOLAFIN": "BANKING / FINANCE", "PFC": "BANKING / FINANCE",
+    "RECLTD": "BANKING / FINANCE", "SBICARD": "BANKING / FINANCE",
+    "MANAPPURAM": "BANKING / FINANCE", "MFSL": "BANKING / FINANCE",
+    # Auto
+    "TATAMOTORS": "AUTO / AUTO ANCILLARY", "M&M": "AUTO / AUTO ANCILLARY",
+    "MARUTI": "AUTO / AUTO ANCILLARY", "BAJAJ-AUTO": "AUTO / AUTO ANCILLARY",
+    "HEROMOTOCO": "AUTO / AUTO ANCILLARY", "EICHERMOT": "AUTO / AUTO ANCILLARY",
+    "ASHOKLEY": "AUTO / AUTO ANCILLARY", "TVSMOTOR": "AUTO / AUTO ANCILLARY",
+    "BALKRISIND": "AUTO / AUTO ANCILLARY", "MRF": "AUTO / AUTO ANCILLARY",
+    "EXIDEIND": "AUTO / AUTO ANCILLARY", "APOLLOTYRE": "AUTO / AUTO ANCILLARY",
+    "BOSCHLTD": "AUTO / AUTO ANCILLARY", "MOTHERSON": "AUTO / AUTO ANCILLARY",
     # FMCG
-    "HINDUNILVR": "FMCG", "NESTLEIND": "FMCG", "ITC": "FMCG",
-    "BRITANNIA": "FMCG", "DABUR": "FMCG", "MARICO": "FMCG",
-    "COLPAL": "FMCG", "GODREJCP": "FMCG", "TATACONSUM": "FMCG",
-    "PGHH": "FMCG", "UBL": "FMCG", "JUBLFOOD": "FMCG",
-    "MCDOWELL": "FMCG", "EMAMILTD": "FMCG",
-    # Oil & Gas / Energy
-    "RELIANCE": "OIL & GAS", "ONGC": "OIL & GAS", "BPCL": "OIL & GAS",
-    "IOC": "OIL & GAS", "GAIL": "OIL & GAS", "HINDPETRO": "OIL & GAS",
-    "PETRONET": "OIL & GAS", "MGL": "OIL & GAS", "IGL": "OIL & GAS",
-    "GSPL": "OIL & GAS", "GUJGASLTD": "OIL & GAS", "ADANIGREEN": "ENERGY",
-    # Infrastructure / Engineering / Capital Goods
-    "LT": "INFRA", "ADANIPORTS": "INFRA", "SIEMENS": "INFRA",
-    "ABB": "INFRA", "BEL": "DEFENCE", "HAL": "DEFENCE",
-    "BHEL": "INFRA", "CUMMINSIND": "INFRA", "L&T": "INFRA",
-    "KEC": "INFRA", "IRCON": "INFRA", "NCC": "INFRA",
-    "GMRINFRA": "INFRA", "ADANITRANS": "INFRA",
-    # Metals & Mining
-    "TATASTEEL": "METALS", "JSWSTEEL": "METALS", "HINDALCO": "METALS",
-    "COALINDIA": "METALS", "NMDC": "METALS", "SAIL": "METALS",
-    "JINDALSTEL": "METALS", "NATIONALUM": "METALS", "HINDCOPPER": "METALS",
-    "VEDL": "METALS", "MOIL": "METALS",
-    # Telecom
-    "BHARTIARTL": "TELECOM", "IDEA": "TELECOM", "INDUSTOWER": "TELECOM",
-    "TEJASNET": "TELECOM",
-    # Power & Utilities
-    "NTPC": "POWER", "POWERGRID": "POWER", "NHPC": "POWER",
-    "ADANIPOWER": "POWER", "TATAPOWER": "POWER", "JSWENERGY": "POWER",
-    "SJVN": "POWER", "TORNTPOWER": "POWER",
-    # Real Estate
-    "DLF": "REALTY", "OBEROIRLTY": "REALTY", "GODREJPROP": "REALTY",
-    "PHOENIXLTD": "REALTY", "PRESTIGE": "REALTY", "SOBHA": "REALTY",
-    "BRIGADE": "REALTY", "SUNTECK": "REALTY",
+    "HINDUNILVR": "FMCG / CONSUMER", "NESTLEIND": "FMCG / CONSUMER",
+    "ITC": "FMCG / CONSUMER", "BRITANNIA": "FMCG / CONSUMER",
+    "DABUR": "FMCG / CONSUMER", "MARICO": "FMCG / CONSUMER",
+    "COLPAL": "FMCG / CONSUMER", "GODREJCP": "FMCG / CONSUMER",
+    "TATACONSUM": "FMCG / CONSUMER", "UBL": "FMCG / CONSUMER",
+    "JUBLFOOD": "FMCG / CONSUMER", "PGHH": "FMCG / CONSUMER",
+    "EMAMILTD": "FMCG / CONSUMER",
+    # Energy
+    "RELIANCE": "ENERGY / POWER", "ONGC": "ENERGY / POWER",
+    "BPCL": "ENERGY / POWER", "IOC": "ENERGY / POWER",
+    "GAIL": "ENERGY / POWER", "HINDPETRO": "ENERGY / POWER",
+    "PETRONET": "ENERGY / POWER", "MGL": "ENERGY / POWER",
+    "IGL": "ENERGY / POWER", "ADANIGREEN": "ENERGY / POWER",
+    "NTPC": "ENERGY / POWER", "POWERGRID": "ENERGY / POWER",
+    "ADANIPOWER": "ENERGY / POWER", "TATAPOWER": "ENERGY / POWER",
+    # Infra
+    "LT": "INFRASTRUCTURE", "ADANIPORTS": "INFRASTRUCTURE",
+    "SIEMENS": "INFRASTRUCTURE", "ABB": "INFRASTRUCTURE",
+    "BHEL": "INFRASTRUCTURE", "CUMMINSIND": "INFRASTRUCTURE",
+    "GMRINFRA": "INFRASTRUCTURE", "ADANITRANS": "INFRASTRUCTURE",
+    # Metals
+    "TATASTEEL": "METALS / MINING", "JSWSTEEL": "METALS / MINING",
+    "HINDALCO": "METALS / MINING", "COALINDIA": "METALS / MINING",
+    "NMDC": "METALS / MINING", "SAIL": "METALS / MINING",
+    "VEDL": "METALS / MINING", "JINDALSTEL": "METALS / MINING",
+    # Telecom / Media
+    "BHARTIARTL": "TELECOM / MEDIA", "IDEA": "TELECOM / MEDIA",
+    "PVRINOX": "TELECOM / MEDIA", "ZEE": "TELECOM / MEDIA",
+    "SUNTV": "TELECOM / MEDIA", "NETWORK18": "TELECOM / MEDIA",
+    # Realty
+    "DLF": "INFRASTRUCTURE", "OBEROIRLTY": "INFRASTRUCTURE",
+    "GODREJPROP": "INFRASTRUCTURE", "PHOENIXLTD": "INFRASTRUCTURE",
     # Cement
-    "ULTRACEMCO": "CEMENT", "GRASIM": "CEMENT", "AMBUJACEM": "CEMENT",
-    "ACC": "CEMENT", "DALBHARAT": "CEMENT", "JKCEMENT": "CEMENT",
-    "SHREECEM": "CEMENT", "RAMCOCEM": "CEMENT",
-    # Chemicals
-    "PIDILITIND": "CHEMICALS", "SRF": "CHEMICALS", "UPL": "AGROCHEMICALS",
-    "NAVINFLUOR": "CHEMICALS", "DEEPAKNTR": "CHEMICALS",
-    "LALPATHLAB": "HEALTHCARE", "COROMANDEL": "AGROCHEMICALS",
-    "PIIND": "AGROCHEMICALS", "BAYERCROP": "AGROCHEMICALS",
-    "GSFC": "CHEMICALS", "GNFC": "CHEMICALS",
-    # Media & Entertainment
-    "PVRINOX": "MEDIA", "ZEE": "MEDIA", "NETWORK18": "MEDIA",
-    "SUNTV": "MEDIA", "IIFL": "FINANCIAL",
-    # Retail
-    "TRENT": "RETAIL", "TITAN": "RETAIL", "DMART": "RETAIL",
-    "ABFRL": "RETAIL", "PAGEIND": "RETAIL",
-    # Logistics & Shipping
-    "CONCOR": "LOGISTICS", "DELHIVERY": "LOGISTICS", "BLUEDART": "LOGISTICS",
-    "ADANILOG": "LOGISTICS", "GATI": "LOGISTICS", "TCIEXP": "LOGISTICS",
-    # Hospitality / Tourism
-    "INDHOTEL": "HOSPITALITY", "EIHOTEL": "HOSPITALITY", "LEMONTREE": "HOSPITALITY",
-    # Others / Conglomerates
-    "ADANIENT": "CONGLOMERATE", "ADANIENT": "CONGLOMERATE",
+    "ULTRACEMCO": "INFRASTRUCTURE", "GRASIM": "INFRASTRUCTURE",
+    "AMBUJACEM": "INFRASTRUCTURE", "ACC": "INFRASTRUCTURE",
+    "SHREECEM": "INFRASTRUCTURE",
+    # Logistics
+    "CONCOR": "LOGISTICS / TRANSPORT", "DELHIVERY": "LOGISTICS / TRANSPORT",
+    "BLUEDART": "LOGISTICS / TRANSPORT",
+    # Defence
+    "BEL": "DEFENCE / AEROSPACE", "HAL": "DEFENCE / AEROSPACE",
 }
 
+
+def get_sector(ticker: str) -> str:
+    """Get sector/domain for a given stock ticker."""
+    clean = ticker.replace(".NS", "").strip().upper()
+    return _SECTOR_MAP.get(clean, "OTHER / DIVERSIFIED")
+
+
+# ---------------------------------------------------------------------------
+# Market Cap Classification
+# ---------------------------------------------------------------------------
 _MARKET_CAP_THRESHOLDS = {
-    "Large Cap": 20000,  # ₹20,000+ Cr
-    "Mid Cap": 5000,     # ₹5,000 - ₹20,000 Cr
-    "Small Cap": 1000,   # ₹1,000 - ₹5,000 Cr
+    "Large Cap": 20000,
+    "Mid Cap": 5000,
+    "Small Cap": 1000,
 }
-
 
 def classify_market_cap(market_cap_cr: float) -> str:
-    """Classify market cap into Large/Mid/Small/Micro."""
     if market_cap_cr >= _MARKET_CAP_THRESHOLDS["Large Cap"]:
         return "Large Cap"
     elif market_cap_cr >= _MARKET_CAP_THRESHOLDS["Mid Cap"]:
         return "Mid Cap"
     elif market_cap_cr >= _MARKET_CAP_THRESHOLDS["Small Cap"]:
         return "Small Cap"
+    return "Micro Cap"
+
+
+# ---------------------------------------------------------------------------
+# MULTI-SOURCE IPO DATA SCRAPING
+# ---------------------------------------------------------------------------
+
+def _parse_date(date_str: str) -> str:
+    """Parse various date formats to YYYY-MM-DD."""
+    if not date_str or date_str.strip() in ("--", "-", "N/A", ""):
+        return ""
+    date_str = date_str.strip()
+    formats = [
+        "%b %d, %Y", "%d-%b-%Y", "%d-%m-%Y", "%Y-%m-%d",
+        "%d/%m/%Y", "%m/%d/%Y", "%d %b %Y", "%B %d, %Y"
+    ]
+    for fmt in formats:
+        try:
+            return datetime.datetime.strptime(date_str, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return date_str
+
+
+def _extract_price_band(text: str) -> tuple:
+    """Extract lower and upper price from text like '₹125-₹135' or '125 to 135'."""
+    if not text:
+        return (0, 0)
+    text = text.replace("₹", "").replace(",", "").strip()
+    # Pattern: numbers separated by - or 'to'
+    match = re.search(r'(\d+\.?\d*)\s*(?:-|to)\s*(\d+\.?\d*)', text)
+    if match:
+        return (float(match.group(1)), float(match.group(2)))
+    # Single number
+    match = re.search(r'(\d+\.?\d*)', text)
+    if match:
+        val = float(match.group(1))
+        return (val, val)
+    return (0, 0)
+
+
+# ---- Source 1: Chittorgarh IPO Tracker ----
+def scrape_chittorgarh() -> list[dict]:
+    """Scrape mainboard IPO list from Chittorgarh."""
+    url = "https://www.chittorgarh.com/report/mainboard-ipo-list-in-india-bse-nse/83/"
+    ipos = []
+    try:
+        resp = requests.get(url, headers=_HEADERS, timeout=15)
+        if resp.status_code != 200:
+            return ipos
+        soup = BeautifulSoup(resp.content, "html.parser")
+        # Try multiple table selectors
+        table = soup.find("table", class_=re.compile(r'table|report|ipo'))
+        if not table:
+            table = soup.find("table")
+        if not table:
+            return ipos
+        
+        rows = table.find_all("tr")[1:]
+        for row in rows:
+            cols = row.find_all("td")
+            if len(cols) < 6:
+                continue
+            
+            name = cols[0].get_text(strip=True).replace("IPO", "").strip()
+            if not name:
+                continue
+            
+            open_raw = cols[1].get_text(strip=True)
+            close_raw = cols[2].get_text(strip=True)
+            listing_raw = cols[3].get_text(strip=True)
+            price_raw = cols[4].get_text(strip=True)
+            gain_raw = cols[5].get_text(strip=True) if len(cols) > 5 else "--"
+            
+            lower, upper = _extract_price_band(price_raw)
+            price_band = f"{lower}-{upper}" if lower != upper else f"{lower}"
+            
+            open_date = _parse_date(open_raw)
+            close_date = _parse_date(close_raw)
+            listing_date = _parse_date(listing_raw)
+            
+            # Determine status
+            today = datetime.date.today()
+            status = "Upcoming"
+            try:
+                od = datetime.datetime.strptime(open_date, "%Y-%m-%d").date()
+                cd = datetime.datetime.strptime(close_date, "%Y-%m-%d").date() if close_date else od
+                if today < od:
+                    status = "Upcoming"
+                elif od <= today <= cd:
+                    status = "Ongoing"
+                else:
+                    status = "Closed"
+            except Exception:
+                if gain_raw and gain_raw != "--":
+                    status = "Listed"
+            
+            if status == "Closed":
+                try:
+                    ld = datetime.datetime.strptime(listing_date, "%Y-%m-%d").date()
+                    if today >= ld or gain_raw != "--":
+                        status = "Listed"
+                except Exception:
+                    if gain_raw != "--":
+                        status = "Listed"
+            
+            # Lot size & min amount
+            lot_size = 0
+            min_amount = 0
+            if upper > 0:
+                lot_size = max(1, int(round(14500 / upper)))
+                min_amount = int(lot_size * upper)
+            
+            symbol = re.sub(r'[^A-Z]', '', name.split()[0].upper())[:8] if name.split() else ""
+            
+            ipos.append({
+                "name": name,
+                "symbol": symbol,
+                "status": status,
+                "price_band": price_band,
+                "lower_price": lower,
+                "upper_price": upper,
+                "min_amount": min_amount,
+                "lot_size": lot_size,
+                "open_date": open_date,
+                "close_date": close_date,
+                "listing_date": listing_date,
+                "source": "Chittorgarh",
+            })
+    except Exception as e:
+        print(f"[Chittorgarh] Error: {e}")
+    return ipos
+
+
+# ---- Source 2: IPO Watch (moneycontrol) ----
+def scrape_moneycontrol_ipos() -> list[dict]:
+    """Scrape IPO data from Moneycontrol."""
+    ipos = []
+    try:
+        url = "https://www.moneycontrol.com/ipo/upcoming-ipos/"
+        resp = requests.get(url, headers=_HEADERS, timeout=15)
+        if resp.status_code != 200:
+            return ipos
+        soup = BeautifulSoup(resp.content, "html.parser")
+        
+        # Find IPO table
+        table = soup.find("table", class_=re.compile(r'ipo|table'))
+        if not table:
+            # Try to find any table with IPO data
+            tables = soup.find_all("table")
+            for t in tables:
+                if "ipo" in str(t).lower():
+                    table = t
+                    break
+        
+        if not table:
+            # Try alternative: look for div-based listing
+            items = soup.find_all("div", class_=re.compile(r'ipo|issue'))
+            for item in items:
+                name_el = item.find(["h2", "h3", "h4", "strong", "a"])
+                if not name_el:
+                    continue
+                name = name_el.get_text(strip=True)
+                if not name or "ipo" not in name.lower():
+                    continue
+                
+                text = item.get_text()
+                price_match = re.search(r'₹\s*(\d+[\d,.]*)\s*(?:-|to)\s*₹\s*(\d+[\d,.]*)', text)
+                lower = upper = 0
+                if price_match:
+                    lower = float(price_match.group(1).replace(",", ""))
+                    upper = float(price_match.group(2).replace(",", ""))
+                
+                ipos.append({
+                    "name": name.replace("IPO", "").strip(),
+                    "status": "Upcoming",
+                    "price_band": f"{lower}-{upper}" if lower else "N/A",
+                    "lower_price": lower, "upper_price": upper,
+                    "source": "Moneycontrol",
+                })
+            return ipos
+        
+        rows = table.find_all("tr")
+        for row in rows[1:]:
+            cols = row.find_all("td")
+            if len(cols) < 3:
+                continue
+            name = cols[0].get_text(strip=True).replace("IPO", "").strip()
+            if not name:
+                continue
+            price_text = cols[1].get_text(strip=True) if len(cols) > 1 else ""
+            lower, upper = _extract_price_band(price_text)
+            
+            ipos.append({
+                "name": name, "status": "Upcoming",
+                "price_band": f"{lower}-{upper}" if lower else "N/A",
+                "lower_price": lower, "upper_price": upper,
+                "source": "Moneycontrol",
+            })
+    except Exception as e:
+        print(f"[Moneycontrol IPO] Error: {e}")
+    return ipos
+
+
+# ---- Source 3: Trendlyne IPO data ----
+def scrape_trendlyne_ipos() -> list[dict]:
+    """Scrape IPO data from Trendlyne."""
+    ipos = []
+    try:
+        url = "https://trendlyne.com/ipo/"
+        resp = requests.get(url, headers=_HEADERS, timeout=15)
+        if resp.status_code != 200:
+            return ipos
+        soup = BeautifulSoup(resp.content, "html.parser")
+        
+        # Find IPO cards
+        cards = soup.find_all("div", class_=re.compile(r'card|ipo-card|ipo-item'))
+        for card in cards:
+            name_el = card.find(["h4", "h5", "h3", "a", "strong"])
+            if not name_el:
+                continue
+            name = name_el.get_text(strip=True)
+            if not name or len(name) < 3:
+                continue
+            
+            text = card.get_text()
+            price_match = re.search(r'₹\s*(\d+[\d,.]*)\s*(?:-|to)\s*₹\s*(\d+[\d,.]*)', text)
+            lower = upper = 0
+            if price_match:
+                lower = float(price_match.group(1).replace(",", ""))
+                upper = float(price_match.group(2).replace(",", ""))
+            
+            ipos.append({
+                "name": name.replace("IPO", "").strip(),
+                "status": "Upcoming",
+                "price_band": f"{lower}-{upper}" if lower else "N/A",
+                "lower_price": lower, "upper_price": upper,
+                "source": "Trendlyne",
+            })
+    except Exception as e:
+        print(f"[Trendlyne IPO] Error: {e}")
+    return ipos
+
+
+# ---- Source 4: NSE API (live) ----
+def fetch_nse_api() -> list[dict]:
+    """Fetch IPOs from NSE API."""
+    ipos = []
+    try:
+        from nsepython import nsefetch
+        data = nsefetch('https://www.nseindia.com/api/ipo-current-issue')
+        if data and isinstance(data, list):
+            for item in data:
+                name = item.get("companyName", "").strip()
+                if not name:
+                    continue
+                symbol = item.get("symbol", "")
+                lower = float(item.get("lowerPrice", 0) or 0)
+                upper = float(item.get("upperPrice", 0) or 0)
+                ipos.append({
+                    "name": name, "symbol": symbol, "status": "Ongoing",
+                    "price_band": f"{lower}-{upper}" if lower else "N/A",
+                    "lower_price": lower, "upper_price": upper,
+                    "open_date": item.get("issueStartDate", ""),
+                    "close_date": item.get("issueEndDate", ""),
+                    "source": "NSE Live API",
+                })
+    except Exception as e:
+        print(f"[NSE API] Error: {e}")
+    return ipos
+
+
+# ---- GMP (Grey Market Premium) Scraper ----
+def scrape_gmp_data() -> dict:
+    """Scrape Grey Market Premium for IPOs from multiple sources."""
+    gmp_data = {}
+    try:
+        # Source: ipowatch.in / investorgain.com
+        url = "https://www.investorgain.com/report/live-ipo-grey-market-premium-gmp/"
+        resp = requests.get(url, headers=_HEADERS, timeout=15)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.content, "html.parser")
+            table = soup.find("table")
+            if table:
+                rows = table.find_all("tr")[1:]
+                for row in rows:
+                    cols = row.find_all("td")
+                    if len(cols) >= 4:
+                        name = cols[0].get_text(strip=True)
+                        gmp = cols[1].get_text(strip=True)
+                        est_listing = cols[2].get_text(strip=True)
+                        try:
+                            gmp_val = float(gmp.replace("₹", "").replace(",", "").strip())
+                        except ValueError:
+                            gmp_val = 0
+                        gmp_data[name.lower()] = {
+                            "gmp": gmp_val,
+                            "estimated_listing": est_listing,
+                        }
+    except Exception as e:
+        print(f"[GMP Scraper] Error: {e}")
+    
+    # Try alternative source
+    try:
+        url2 = "https://www.ipowatch.in/ipo-grey-market-premium/"
+        resp2 = requests.get(url2, headers=_HEADERS, timeout=15)
+        if resp2.status_code == 200:
+            soup2 = BeautifulSoup(resp2.content, "html.parser")
+            for row in soup2.find_all("tr"):
+                cols = row.find_all("td")
+                if len(cols) >= 3:
+                    name = cols[0].get_text(strip=True)
+                    gmp_text = cols[1].get_text(strip=True)
+                    try:
+                        gmp_val = float(re.sub(r'[^\d.-]', '', gmp_text))
+                    except ValueError:
+                        gmp_val = 0
+                    if name and name not in gmp_data:
+                        gmp_data[name.lower()] = {"gmp": gmp_val, "estimated_listing": ""}
+    except Exception as e:
+        print(f"[GMP Scraper 2] Error: {e}")
+    
+    return gmp_data
+
+
+def save_gmp_cache(gmp_data: dict):
+    """Save GMP data to cache."""
+    try:
+        cache = {"timestamp": datetime.datetime.now().isoformat(), "data": gmp_data}
+        with open(_GMP_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(cache, f, indent=2)
+    except Exception as e:
+        print(f"Error saving GMP cache: {e}")
+
+
+def load_gmp_cache() -> dict:
+    """Load GMP data from cache."""
+    try:
+        if os.path.exists(_GMP_CACHE_PATH):
+            with open(_GMP_CACHE_PATH, "r", encoding="utf-8") as f:
+                cache = json.load(f)
+            ts = cache.get("timestamp", "")
+            if ts:
+                cached_time = datetime.datetime.fromisoformat(ts)
+                if (datetime.datetime.now() - cached_time).total_seconds() < 3600:
+                    return cache.get("data", {})
+    except Exception:
+        pass
+    return {}
+
+
+def get_live_gmp() -> dict:
+    """Get live GMP data with cache fallback."""
+    gmp = scrape_gmp_data()
+    if gmp:
+        save_gmp_cache(gmp)
+        return gmp
+    return load_gmp_cache()
+
+
+# ---- Merge all IPO sources ----
+def _merge_ipos(sources: list[list]) -> list[dict]:
+    """Merge IPO lists from multiple sources, deduplicating by name."""
+    seen = {}
+    for source_list in sources:
+        for ipo in source_list:
+            key = ipo.get("name", "").lower().strip()
+            if not key:
+                continue
+            if key in seen:
+                # Merge non-empty fields from other sources
+                existing = seen[key]
+                for field in ["open_date", "close_date", "listing_date", "symbol",
+                              "lower_price", "upper_price", "price_band", "lot_size", "min_amount"]:
+                    if not existing.get(field) and ipo.get(field):
+                        existing[field] = ipo[field]
+                if ipo.get("status") and not existing.get("status"):
+                    existing["status"] = ipo["status"]
+            else:
+                seen[key] = dict(ipo)
+    return list(seen.values())
+
+
+def get_live_ipos() -> list[dict]:
+    """
+    Fetch IPO data from ALL available sources, merge, analyze, and return.
+    Falls back to cache if all sources fail.
+    """
+    # Try all sources in parallel-ish manner
+    chittorgarh = scrape_chittorgarh()
+    moneycontrol = scrape_moneycontrol_ipos()
+    trendlyne = scrape_trendlyne_ipos()
+    nse = fetch_nse_api()
+    
+    all_sources = [chittorgarh, moneycontrol, trendlyne, nse]
+    merged = _merge_ipos(all_sources)
+    
+    # Enrich with sector classification
+    for ipo in merged:
+        if not ipo.get("sector"):
+            ipo["sector"] = classify_sector_by_name(ipo.get("name", ""))
+    
+    if merged:
+        save_ipo_cache(merged)
+        return merged
+    
+    return load_ipo_cache()
+
+
+def save_ipo_cache(ipo_list: list[dict]):
+    """Save IPO list to cache."""
+    try:
+        with open(_IPO_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(ipo_list, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"Error saving IPO cache: {e}")
+
+
+def load_ipo_cache() -> list[dict]:
+    """Load IPO list from cache."""
+    if os.path.exists(_IPO_CACHE_PATH):
+        try:
+            with open(_IPO_CACHE_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return []
+
+
+# ---------------------------------------------------------------------------
+# COMPREHENSIVE NEWS & SOCIAL MEDIA AGGREGATION
+# ---------------------------------------------------------------------------
+
+def fetch_ipo_news(company_name: str) -> list[dict]:
+    """
+    Fetch real-time news about an IPO from multiple sources:
+    - Google News RSS
+    - Moneycontrol search
+    - Economic Times search
+    - Company website (if discoverable)
+    """
+    news_items = []
+    query = f'"{company_name}" IPO'
+    
+    # 1. Google News RSS
+    try:
+        import urllib.request, urllib.parse, xml.etree.ElementTree as ET
+        encoded = urllib.parse.quote(query)
+        url = f"https://news.google.com/rss/search?q={encoded}&hl=en-IN&gl=IN&ceid=IN:en"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            root = ET.fromstring(response.read())
+        for item in root.findall('.//item')[:6]:
+            title = item.find('title').text if item.find('title') is not None else ""
+            link = item.find('link').text if item.find('link') is not None else ""
+            pub_date = item.find('pubDate').text if item.find('pubDate') is not None else ""
+            source_el = item.find('source')
+            source_name = source_el.text if source_el is not None else "Google News"
+            if title:
+                news_items.append({
+                    "title": title.strip(),
+                    "link": link.strip(),
+                    "source": source_name,
+                    "date": pub_date,
+                    "type": "news",
+                })
+    except Exception as e:
+        print(f"[IPO News Google] {company_name}: {e}")
+    
+    # 2. Moneycontrol search
+    try:
+        mc_query = company_name.replace(" ", "+")
+        mc_url = f"https://www.moneycontrol.com/news/tags/{mc_query}.html"
+        resp = requests.get(mc_url, headers=_HEADERS, timeout=8)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.content, "html.parser")
+            headlines = soup.find_all("h2") + soup.find_all("h3")
+            for h in headlines[:4]:
+                a = h.find("a")
+                if a:
+                    title = a.get_text(strip=True)
+                    link = a.get("href", "")
+                    if title and len(title) > 15:
+                        news_items.append({
+                            "title": title, "link": link if link.startswith("http") else f"https://www.moneycontrol.com{link}",
+                            "source": "Moneycontrol", "date": "", "type": "news",
+                        })
+    except Exception as e:
+        print(f"[IPO News Moneycontrol] {company_name}: {e}")
+    
+    # 3. Search for company website
+    try:
+        search_q = company_name.replace(" ", "+").replace("&", "%26")
+        search_url = f"https://www.google.com/search?q={search_q}+official+website"
+        resp = requests.get(search_url, headers={**_HEADERS, "Accept-Language": "en-IN"}, timeout=8)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.content, "html.parser")
+            for a in soup.find_all("a"):
+                href = a.get("href", "")
+                text = a.get_text(strip=True)
+                if "http" in href and text and len(text) > 10:
+                    # Look for company website
+                    if any(ext in text.lower() for ext in [".com", ".in", ".co.in"]):
+                        domain = re.search(r'https?://([^/]+)', href)
+                        if domain and not any(b in domain.group(1) for b in ["google", "youtube", "facebook", "twitter"]):
+                            news_items.append({
+                                "title": f"Company Website: {text}",
+                                "link": href,
+                                "source": "Company",
+                                "date": "",
+                                "type": "website",
+                            })
+                            break
+    except Exception as e:
+        print(f"[IPO Website] {company_name}: {e}")
+    
+    # 4. Social media / Twitter search via Nitter (public alternative)
+    try:
+        twitter_q = company_name.replace(" ", "%20") + "%20IPO"
+        # Use Nitter instance for public Twitter access
+        nitter_urls = [
+            f"https://nitter.net/search?q={twitter_q}",
+            f"https://nitter.privacydev.net/search?q={twitter_q}",
+        ]
+        for nurl in nitter_urls:
+            try:
+                resp = requests.get(nurl, headers=_HEADERS, timeout=8)
+                if resp.status_code == 200:
+                    soup = BeautifulSoup(resp.content, "html.parser")
+                    tweets = soup.find_all("div", class_="tweet-content")
+                    for t in tweets[:3]:
+                        text = t.get_text(strip=True)
+                        if text and len(text) > 20:
+                            news_items.append({
+                                "title": text[:200],
+                                "link": nurl,
+                                "source": "Twitter/X (via Nitter)",
+                                "date": "",
+                                "type": "social",
+                            })
+                    break
+            except Exception:
+                continue
+    except Exception as e:
+        print(f"[IPO Social Media] {company_name}: {e}")
+    
+    # 5. Search for RHP/DRHP draft paper
+    try:
+        drhp_query = company_name.replace(" ", "+") + "+DRHP+SEBI"
+        drhp_url = f"https://www.google.com/search?q={drhp_query}"
+        resp = requests.get(drhp_url, headers=_HEADERS, timeout=8)
+        if resp.status_code == 200:
+            soup = BeautifulSoup(resp.content, "html.parser")
+            for a in soup.find_all("a"):
+                href = a.get("href", "")
+                text = a.get_text(strip=True)
+                if "sebi" in href.lower() or "drhp" in href.lower() or "rhp" in href.lower():
+                    news_items.append({
+                        "title": f"📄 Draft Paper: {text}" if text else "📄 SEBI Draft Red Herring Prospectus",
+                        "link": href,
+                        "source": "SEBI / BSE / NSE",
+                        "date": "",
+                        "type": "draft_paper",
+                    })
+                    if len([x for x in news_items if x["type"] == "draft_paper"]) >= 2:
+                        break
+    except Exception as e:
+        print(f"[IPO Draft Paper] {company_name}: {e}")
+    
+    return news_items
+
+
+def analyze_news_sentiment(news_items: list[dict]) -> dict:
+    """
+    Analyze sentiment of aggregated news:
+    Returns overall sentiment score (-1 to 1) and breakdown.
+    """
+    positive_words = [
+        "strong", "growth", "profit", "record", "positive", "gain", "bullish",
+        "oversubscribed", "anchor", "institution", "qib", "hni", "premium",
+        "listing gain", "gmp", "high demand", "success", "approve", "green",
+        "upgrade", "outperform", "beat", "leader", "innovation", "patent",
+    ]
+    negative_words = [
+        "loss", "debt", "risk", "decline", "delay", "investigation", "scrutiny",
+        "underpriced", "overvalued", "concern", "probe", "regulatory", "ban",
+        "negative", "bearish", "withdraw", "cancel", "reject", "down",
+        "underperform", "sell", "avoid", "volatile", "uncertain",
+    ]
+    
+    total_score = 0
+    total_items = 0
+    
+    for item in news_items:
+        title = item.get("title", "").lower()
+        source = item.get("source", "").lower()
+        score = 0
+        
+        for word in positive_words:
+            if word in title:
+                score += 1
+        for word in negative_words:
+            if word in title:
+                score -= 1
+        
+        # Weight by source credibility
+        weight = 1.0
+        if "sebi" in source or "nse" in source or "bse" in source:
+            weight = 1.5
+        elif "moneycontrol" in source or "economic times" in source:
+            weight = 1.2
+        elif "twitter" in source or "social" in source:
+            weight = 0.7
+        
+        total_score += score * weight
+        total_items += 1
+    
+    if total_items == 0:
+        return {"score": 0, "label": "Neutral", "positive": 0, "negative": 0, "neutral": total_items}
+    
+    avg_score = total_score / total_items
+    # Normalize to -1 to 1
+    normalized = max(-1, min(1, avg_score / 3))
+    
+    if normalized > 0.2:
+        label = "Positive"
+    elif normalized < -0.2:
+        label = "Negative"
     else:
-        return "Micro Cap"
+        label = "Neutral"
+    
+    return {
+        "score": round(normalized, 2),
+        "label": label,
+        "total_items": total_items,
+    }
 
 
-def get_sector(ticker: str) -> str:
-    """Get sector/domain for a given stock ticker."""
-    clean = ticker.replace(".NS", "").strip().upper()
-    return _NSE_SECTOR_MAP.get(clean, "OTHER")
+# ---------------------------------------------------------------------------
+# PEER ANALYSIS FOR IPO VALUATION
+# ---------------------------------------------------------------------------
+def get_ipo_peer_comparison(sector: str) -> dict:
+    """Find comparable listed companies in the same sector and get valuation metrics."""
+    peers = [sym for sym, sec in _SECTOR_MAP.items() if sec == sector]
+    peers = peers[:8]  # Limit to top 8 peers
+    
+    peer_data = []
+    avg_pe = 0
+    avg_revenue_growth = 0
+    avg_roe = 0
+    count = 0
+    
+    for peer in peers:
+        try:
+            import yfinance as yf
+            stock = yf.Ticker(peer + ".NS")
+            info = stock.info or {}
+            pe = info.get("trailingPE") or info.get("forwardPE") or 0
+            rev_growth = info.get("revenueGrowth", 0) or 0
+            roe = info.get("returnOnEquity", 0) or 0
+            mc = info.get("marketCap", 0) or 0
+            mc_cr = mc / 1e7
+            
+            if pe > 0:
+                peer_data.append({
+                    "symbol": peer,
+                    "pe": round(pe, 2),
+                    "revenue_growth": round(rev_growth * 100, 2),
+                    "roe": round(roe * 100, 2),
+                    "market_cap_cr": round(mc_cr, 2),
+                })
+                avg_pe += pe
+                avg_revenue_growth += rev_growth
+                avg_roe += roe
+                count += 1
+        except Exception:
+            continue
+    
+    result = {
+        "sector": sector,
+        "peers_found": count,
+        "peers": peer_data,
+        "avg_pe": round(avg_pe / count, 2) if count > 0 else 0,
+        "avg_revenue_growth": round((avg_revenue_growth / count) * 100, 2) if count > 0 else 0,
+        "avg_roe": round((avg_roe / count) * 100, 2) if count > 0 else 0,
+    }
+    
+    # Sector outlook
+    high_growth = ["IT / TECHNOLOGY", "PHARMA / HEALTHCARE", "ENERGY / POWER",
+                   "BANKING / FINANCE", "TELECOM / MEDIA"]
+    defensive = ["FMCG / CONSUMER", "PHARMA / HEALTHCARE", "EDUCATION"]
+    
+    if sector in high_growth:
+        result["sector_outlook"] = "High Growth"
+    elif sector in defensive:
+        result["sector_outlook"] = "Defensive / Stable"
+    else:
+        result["sector_outlook"] = "Cyclical / Value"
+    
+    return result
+
+
+# ---------------------------------------------------------------------------
+# COMPREHENSIVE IPO ANALYSIS ENGINE
+# ---------------------------------------------------------------------------
+
+def analyze_ipo(ipo: dict) -> dict:
+    """
+    Perform comprehensive IPO analysis with multi-source data.
+    
+    Analysis dimensions:
+    1. Sector/Domain classification
+    2. Financial assessment (from peer comparison + price band)
+    3. GMP-based listing gain estimation
+    4. News sentiment analysis
+    5. Social media buzz
+    6. Company website & draft paper discovery
+    7. Peer valuation comparison
+    8. Final recommendation with weighted scoring
+    """
+    name = ipo.get("name", "Unknown")
+    symbol = ipo.get("symbol", "")
+    
+    # ---- 1. Sector & Domain Classification ----
+    sector = ipo.get("sector", "") or classify_sector_by_name(name)
+    mcap_class = ipo.get("mcap_class", "N/A")
+    
+    # ---- 2. Price Band & Valuation Analysis ----
+    lower_price = float(ipo.get("lower_price", 0) or 0)
+    upper_price = float(ipo.get("upper_price", 0) or 0)
+    mid_price = (lower_price + upper_price) / 2 if (lower_price + upper_price) > 0 else 0
+    
+    # ---- 3. Peer Comparison ----
+    peer_analysis = get_ipo_peer_comparison(sector)
+    
+    # ---- 4. GMP & Listing Gain Estimation ----
+    gmp_data = get_live_gmp()
+    name_lower = name.lower()
+    ipo_gmp = {}
+    for gmp_name, gmp_info in gmp_data.items():
+        if name_lower in gmp_name or gmp_name in name_lower:
+            ipo_gmp = gmp_info
+            break
+    
+    gmp_value = ipo_gmp.get("gmp", 0)
+    if mid_price > 0 and gmp_value > 0:
+        listing_gain_pct = (gmp_value / mid_price) * 100
+    else:
+        listing_gain_pct = 0
+    
+    # ---- 5. Multi-Source News Aggregation ----
+    news_items = fetch_ipo_news(name)
+    sentiment = analyze_news_sentiment(news_items)
+    
+    # ---- 6. Scoring Engine ----
+    scores = _compute_ipo_scores(
+        sector=sector,
+        mid_price=mid_price,
+        lower_price=lower_price,
+        upper_price=upper_price,
+        gmp_value=gmp_value,
+        listing_gain_pct=listing_gain_pct,
+        peer_analysis=peer_analysis,
+        sentiment=sentiment,
+        news_items=news_items,
+        ipo=ipo,
+    )
+    
+    overall_score = scores["overall"]
+    
+    # ---- 7. Recommendation ----
+    if overall_score >= 75:
+        recommendation = "STRONG BUY"
+    elif overall_score >= 60:
+        recommendation = "BUY"
+    elif overall_score >= 40:
+        recommendation = "SUBSCRIBE"
+    elif overall_score >= 25:
+        recommendation = "AVOID"
+    else:
+        recommendation = "SKIP"
+    
+    # ---- 8. Generate detailed textual analysis ----
+    company_desc = _generate_company_description(name, sector, peer_analysis)
+    dev_scope = _generate_development_scope(name, sector)
+    growth_runway = _generate_growth_runway(name, sector, peer_analysis, listing_gain_pct)
+    listing_rationale = _generate_listing_rationale(sector, gmp_value, listing_gain_pct, sentiment)
+    financial_insights = _generate_financial_insights(sector, peer_analysis, mid_price, lower_price, upper_price)
+    
+    return {
+        "name": name,
+        "symbol": symbol,
+        "sector": sector,
+        "status": ipo.get("status", "Upcoming"),
+        "price_band": ipo.get("price_band", "N/A"),
+        "open_date": ipo.get("open_date", ""),
+        "close_date": ipo.get("close_date", ""),
+        "listing_date": ipo.get("listing_date", ""),
+        "min_amount": ipo.get("min_amount", 0),
+        "lot_size": ipo.get("lot_size", 0),
+        "lower_price": lower_price,
+        "upper_price": upper_price,
+        "mid_price": mid_price,
+        # Peer analysis
+        "peer_analysis": peer_analysis,
+        # GMP & Listing
+        "gmp": gmp_value,
+        "listing_gain_pct": round(listing_gain_pct, 2) if listing_gain_pct else 0,
+        "listing_gain_probability": scores["listing_label"],
+        "listing_gain_score": round(scores["listing"], 1),
+        # Growth
+        "growth_assessment": scores["growth_summary"],
+        "growth_score": round(scores["growth"], 1),
+        # Financial
+        "financial_score": round(scores["financial"], 1),
+        "valuation_score": round(scores["valuation"], 1),
+        # Sentiment
+        "sentiment": sentiment,
+        # Overall
+        "overall_score": round(overall_score, 1),
+        "recommendation": recommendation,
+        "recommendation_reason": scores["reason"],
+        # Aggregated news & draft papers
+        "live_news": news_items,
+        # Detailed textual analysis
+        "company_description": company_desc,
+        "development_scope": dev_scope,
+        "growth_runway": growth_runway,
+        "listing_gains_rationale": listing_rationale,
+        "financial_insights": financial_insights,
+    }
+
+
+def _compute_ipo_scores(
+    sector: str,
+    mid_price: float,
+    lower_price: float,
+    upper_price: float,
+    gmp_value: float,
+    listing_gain_pct: float,
+    peer_analysis: dict,
+    sentiment: dict,
+    news_items: list,
+    ipo: dict,
+) -> dict:
+    """Compute weighted scores for IPO analysis."""
+    
+    # ---- Listing Score (0-100) ----
+    listing_score = 50  # baseline
+    
+    # Sector premium for listing
+    premium_sectors = ["IT / TECHNOLOGY", "PHARMA / HEALTHCARE", "ENERGY / POWER",
+                       "BANKING / FINANCE", "FMCG / CONSUMER", "EDUCATION"]
+    if sector in premium_sectors:
+        listing_score += 10
+    elif sector in ["DEFENCE / AEROSPACE"]:
+        listing_score += 8
+    
+    # GMP boost
+    if gmp_value > 0:
+        if listing_gain_pct >= 30:
+            listing_score += 25
+        elif listing_gain_pct >= 20:
+            listing_score += 20
+        elif listing_gain_pct >= 10:
+            listing_score += 15
+        elif listing_gain_pct >= 5:
+            listing_score += 10
+        else:
+            listing_score += 5
+    else:
+        listing_score -= 5  # No GMP data = uncertainty
+    
+    # Price band spread (wider band = more headroom)
+    if lower_price > 0 and upper_price > lower_price:
+        spread = (upper_price - lower_price) / lower_price
+        if spread > 0.10:
+            listing_score += 5
+    
+    # Peer valuation support
+    if peer_analysis.get("avg_pe", 0) > 25:
+        listing_score += 5
+    
+    # Sentiment boost
+    if sentiment.get("label") == "Positive":
+        listing_score += 5
+    elif sentiment.get("label") == "Negative":
+        listing_score -= 5
+    
+    listing_label = "High Probability" if listing_score >= 70 else (
+        "Moderate Probability" if listing_score >= 50 else "Low Probability"
+    )
+    
+    # ---- Growth Score (0-100) ----
+    growth_score = 50
+    
+    high_growth = ["IT / TECHNOLOGY", "PHARMA / HEALTHCARE", "ENERGY / POWER",
+                   "BANKING / FINANCE", "TELECOM / MEDIA", "EDUCATION"]
+    moderate_growth = ["FMCG / CONSUMER", "AUTO / AUTO ANCILLARY", "INFRASTRUCTURE",
+                       "LOGISTICS / TRANSPORT", "DEFENCE / AEROSPACE"]
+    
+    if sector in high_growth:
+        growth_score += 15
+        growth_summary = f"Strong growth potential — {sector} sector is experiencing rapid expansion with significant addressable market"
+    elif sector in moderate_growth:
+        growth_score += 8
+        growth_summary = f"Moderate growth potential — {sector} sector has steady demand driven by structural factors"
+    else:
+        growth_summary = f"Cyclical sector — growth tied to broader economic conditions and commodity cycles"
+    
+    # Peer growth comparison
+    avg_growth = peer_analysis.get("avg_revenue_growth", 0)
+    if avg_growth > 15:
+        growth_score += 10
+        growth_summary += ", with strong peer revenue growth of >15%"
+    elif avg_growth > 8:
+        growth_score += 5
+        growth_summary += ", with healthy peer performance"
+    
+    # Sentiment overlay
+    if sentiment.get("score", 0) > 0.3:
+        growth_score += 5
+    elif sentiment.get("score", 0) < -0.3:
+        growth_score -= 5
+    
+    # ---- Financial Score (0-100) ----
+    financial_score = 50
+    
+    # Peer PE analysis
+    avg_pe = peer_analysis.get("avg_pe", 0)
+    if avg_pe > 0:
+        if avg_pe >= 30:
+            financial_score += 10  # Premium sector
+        elif avg_pe >= 20:
+            financial_score += 5
+        elif avg_pe >= 10:
+            financial_score += 2
+    
+    # Peer profitability (ROE)
+    avg_roe = peer_analysis.get("avg_roe", 0)
+    if avg_roe > 20:
+        financial_score += 10
+    elif avg_roe > 15:
+        financial_score += 5
+    elif avg_roe > 10:
+        financial_score += 2
+    
+    # ---- Valuation Score (0-100) ----
+    valuation_score = 50
+    
+    # Price band reasonableness
+    if upper_price > 0:
+        if upper_price <= 100:
+            valuation_score += 10  # Affordable IPO = broader retail participation
+        elif upper_price <= 500:
+            valuation_score += 5
+        elif upper_price > 2000:
+            valuation_score -= 5  # Premium pricing may limit retail demand
+    
+    # GMP as % of issue price (reasonable GMP = ~10-25% for good IPOs)
+    if listing_gain_pct > 0:
+        if 10 <= listing_gain_pct <= 25:
+            valuation_score += 10  # Healthy realistic premium
+        elif listing_gain_pct > 50:
+            valuation_score += 5  # Very high demand but risky
+        elif listing_gain_pct > 25:
+            valuation_score += 8
+        else:
+            valuation_score += 3
+    
+    # ---- Overall Score ----
+    overall = (
+        listing_score * 0.25 +
+        growth_score * 0.25 +
+        financial_score * 0.20 +
+        valuation_score * 0.15 +
+        (sentiment.get("score", 0) * 50 + 50) * 0.15  # Convert -1..1 to 0..100
+    )
+    
+    # Build recommendation reason
+    parts = []
+    if listing_score >= 70:
+        parts.append("Strong listing gain potential")
+    elif listing_score >= 50:
+        parts.append("Moderate listing upside")
+    
+    if growth_score >= 65:
+        parts.append("High growth sector")
+    
+    if financial_score >= 60:
+        parts.append("Strong sector financials")
+    
+    if sentiment.get("label") == "Positive":
+        parts.append("Positive news sentiment")
+    elif sentiment.get("label") == "Negative":
+        parts.append("Caution: negative news sentiment")
+    
+    if gmp_value > 0:
+        parts.append(f"GMP indicates {listing_gain_pct:.0f}% listing premium")
+    
+    reason = " · ".join(parts) if parts else "Balanced risk-reward profile"
+    
+    return {
+        "listing": listing_score,
+        "listing_label": listing_label,
+        "growth": growth_score,
+        "growth_summary": growth_summary,
+        "financial": financial_score,
+        "valuation": valuation_score,
+        "overall": overall,
+        "reason": reason,
+    }
+
+
+# ---------------------------------------------------------------------------
+# TEXT GENERATION HELPERS
+# ---------------------------------------------------------------------------
+
+def _generate_company_description(name: str, sector: str, peer_analysis: dict) -> str:
+    """Generate company description based on sector and available data."""
+    sector_descriptions = {
+        "IT / TECHNOLOGY": f"IT Consulting, Software-as-a-Service (SaaS), and Digital Solutions. "
+                          f"{name} specializes in enterprise technology services including cloud architecture, "
+                          f"AI/ML solutions, cybersecurity, and digital transformation for global clients. "
+                          f"The sector PE average is {peer_analysis.get('avg_pe', 'N/A')}x with {peer_analysis.get('avg_revenue_growth', 'N/A')}% revenue growth among peers.",
+        
+        "PHARMA / HEALTHCARE": f"Pharmaceutical formulations, Active Pharmaceutical Ingredients (APIs), and healthcare services. "
+                               f"{name} develops therapeutic solutions for regulated markets with a focus on "
+                               f"generics, biosimilars, or specialized healthcare delivery. "
+                               f"Sector peers trade at {peer_analysis.get('avg_pe', 'N/A')}x PE with {peer_analysis.get('avg_roe', 'N/A')}% ROE.",
+        
+        "BANKING / FINANCE": f"Financial services including lending, wealth management, insurance, and digital finance solutions. "
+                            f"{name} operates in India's growing financial inclusion story, targeting "
+                            f"underserved segments through technology-driven distribution. "
+                            f"Sector average PE: {peer_analysis.get('avg_pe', 'N/A')}x.",
+        
+        "ENERGY / POWER": f"Renewable & conventional energy generation, power distribution, and green technology solutions. "
+                         f"{name} is positioned in India's {sector} sector with projects spanning "
+                         f"solar, wind, thermal, or hydro power. "
+                         f"The sector benefits from strong government push toward 500GW clean energy by 2030.",
+        
+        "FMCG / CONSUMER": f"Consumer packaged goods, branded products, and retail distribution. "
+                          f"{name} manufactures and markets essential consumer products across "
+                          f"urban and rural India. Strong brand recall and distribution network are key moats. "
+                          f"Sector ROE average: {peer_analysis.get('avg_roe', 'N/A')}%.",
+        
+        "INFRASTRUCTURE": f"Infrastructure development, EPC contracting, and construction services. "
+                         f"{name} undertakes large-scale civil engineering projects including "
+                         f"roads, bridges, metros, and industrial construction. "
+                         f"Order book visibility and government capex cycles drive performance.",
+        
+        "DEFENCE / AEROSPACE": f"Defence manufacturing, aerospace components, and security solutions. "
+                              f"{name} supplies to Indian defence forces with a focus on "
+                              f"indigenization under the 'Make in India' initiative. "
+                              f"The sector has strong government backing with dedicated procurement budgets.",
+        
+        "TELECOM / MEDIA": f"Telecommunications, digital media, broadcasting, and content creation. "
+                          f"{name} operates in India's rapidly digitizing economy with "
+                          f"expanding data consumption and media reach. "
+                          f"5G rollout and digital adoption are key growth drivers.",
+    }
+    
+    return sector_descriptions.get(sector, 
+        f"{name} operates in the {sector} sector, offering specialized products and services "
+        f"to domestic and international markets. The company is positioned to capitalize on "
+        f"India's economic growth story through its unique value proposition."
+    )
+
+
+def _generate_development_scope(name: str, sector: str) -> str:
+    """Generate development scope analysis."""
+    scopes = {
+        "IT / TECHNOLOGY": "Excellent scope: Expanding AI/ML capabilities, cloud-native solutions, global delivery centers. "
+                          "Opportunity to capture GCC (Global Capability Center) outsourcing demand from Fortune 500 companies.",
+        
+        "PHARMA / HEALTHCARE": "Strong scope: USFDA-compliant manufacturing expansions, biosimilar R&D investments, "
+                              "and growing CDMO (Contract Development & Manufacturing) pipeline. "
+                              "Patent cliff in developed markets provides generics opportunity.",
+        
+        "BANKING / FINANCE": "Significant scope: Digital lending infrastructure, co-lending partnerships with banks, "
+                            "insurance distribution expansion in semi-urban India. "
+                            "India's low credit penetration offers decades of runway.",
+        
+        "ENERGY / POWER": "Massive scope: Renewable energy capacity expansion, green hydrogen projects, "
+                         "battery storage integration, and ESG-focused corporate PPAs. "
+                         "Government target of 500GW renewable capacity by 2030 provides policy tailwind.",
+        
+        "FMCG / CONSUMER": "Steady scope: Rural distribution expansion, D2C channel development, "
+                          "product premiumisation and brand extensions. "
+                          "Rising disposable incomes in tier-2/3 cities drive consumption.",
+        
+        "INFRASTRUCTURE": "Moderate scope: National Infrastructure Pipeline (NIP), Gati Shakti program, "
+                         "and state-level development projects. Order book visibility of 2-3 years typical.",
+        
+        "TELECOM / MEDIA": "High scope: 5G network expansion, OTT content growth, digital advertising, "
+                          "and fiber-to-home broadband penetration. Data consumption growing at 25%+ CAGR.",
+    }
+    
+    return scopes.get(sector,
+        f"Growing scope: {name} has opportunities to expand its market presence through "
+        f"product development, geographic expansion, and strategic partnerships. "
+        f"The addressable market in this sector is expanding with India's economic development."
+    )
+
+
+def _generate_growth_runway(name: str, sector: str, peer_analysis: dict, listing_gain_pct: float) -> str:
+    """Generate revenue growth assessment."""
+    avg_growth = peer_analysis.get("avg_revenue_growth", 0)
+    
+    growth_texts = {
+        "IT / TECHNOLOGY": f"High revenue growth opportunity. Sector peer average revenue growth is {avg_growth:.1f}%. "
+                          f"Digital transformation spending globally is projected to exceed $3.4 trillion by 2027, "
+                          f"providing a strong tailwind for Indian IT services firms.",
+        
+        "PHARMA / HEALTHCARE": f"Reliable growth opportunity. Sector peers growing at {avg_growth:.1f}% average. "
+                              f"Indian pharma market expected to reach $130 billion by 2030, "
+                              f"driven by generics adoption and healthcare access expansion.",
+        
+        "BANKING / FINANCE": f"Significant growth runway. India's credit-to-GDP ratio of ~57% is well below "
+                            f"emerging market averages, indicating substantial headroom. "
+                            f"Sector revenue growth averaging {avg_growth:.1f}% among peers.",
+        
+        "ENERGY / POWER": f"Exceptional growth aligned with ESG mandates. India targeting 500GW renewable capacity by 2030 "
+                         f"from current ~175GW. Long-term PPAs with sovereign counterparties ensure revenue visibility.",
+    }
+    
+    return growth_texts.get(sector,
+        f"Growth opportunity is aligned with sector dynamics. Peer companies show "
+        f"{avg_growth:.1f}% average revenue growth. The company's ability to gain market share "
+        f"and expand margins will determine long-term shareholder value creation."
+    )
+
+
+def _generate_listing_rationale(sector: str, gmp_value: float, listing_gain_pct: float, sentiment: dict) -> str:
+    """Generate listing gain analysis."""
+    gmp_note = f"Current GMP (Grey Market Premium) is ₹{gmp_value:.0f}, suggesting ~{listing_gain_pct:.0f}% listing gain." if gmp_value > 0 else "No GMP data available — listing performance will depend on subscription demand."
+    
+    sent_note = f" News sentiment is {sentiment.get('label', 'Neutral')} with {sentiment.get('total_items', 0)} news sources tracked." if sentiment.get("total_items", 0) > 0 else ""
+    
+    sector_notes = {
+        "IT / TECHNOLOGY": "Technology IPOs typically see strong retail and institutional demand. "
+                          "20-30% listing gains are common for well-priced issues in this sector.",
+        
+        "PHARMA / HEALTHCARE": "Healthcare IPOs attract defensive allocations. 15-20% listing gains typical. "
+                              "Post-listing stability is better than cyclical sectors.",
+        
+        "BANKING / FINANCE": "Financial IPOs are sensitive to interest rate cycles. 10-15% listing gains expected. "
+                            "Anchor investor quality and QIB participation are key indicators.",
+        
+        "ENERGY / POWER": "Green energy IPOs command premium valuations. 20-25% listing gains seen historically. "
+                         "ESG-focused institutional capital provides strong demand support.",
+    }
+    
+    sector_note = sector_notes.get(sector, "Listing gains are influenced by overall market sentiment, issue size, and valuation relative to peers.")
+    
+    return f"{gmp_note}{sent_note} {sector_note}"
+
+
+def _generate_financial_insights(sector: str, peer_analysis: dict, mid_price: float, lower_price: float, upper_price: float) -> str:
+    """Generate financial analysis summary."""
+    avg_pe = peer_analysis.get("avg_pe", 0)
+    avg_roe = peer_analysis.get("avg_roe", 0)
+    peers_found = peer_analysis.get("peers_found", 0)
+    
+    lines = []
+    
+    if peers_found > 0:
+        lines.append(f"• Sector PE (Price-to-Earnings): {avg_pe}x (average of {peers_found} comparable peers)")
+        lines.append(f"• Sector ROE: {avg_roe}%")
+        lines.append(f"• Sector Revenue Growth: {peer_analysis.get('avg_revenue_growth', 'N/A')}%")
+    else:
+        lines.append(f"• Sector: {sector}")
+        lines.append("• No direct listed peers identified for precise PE comparison")
+    
+    if upper_price > 0:
+        issue_size_est = f"Price band: ₹{lower_price:.0f} - ₹{upper_price:.0f}"
+        lines.append(f"• {issue_size_est}")
+        if avg_pe > 0 and mid_price > 0:
+            implied_pe = mid_price * avg_pe / mid_price  # Placeholder
+            lines.append(f"• At the upper price band, the IPO may be valued relative to sector PE of {avg_pe}x")
+    
+    if sector in ["IT / TECHNOLOGY", "PHARMA / HEALTHCARE", "ENERGY / POWER"]:
+        lines.append("• Asset-light business model with high operating leverage")
+        lines.append("• Strong cash flow generation potential typical for this sector")
+    elif sector in ["BANKING / FINANCE"]:
+        lines.append("• Capital adequacy and asset quality are key metrics to evaluate")
+    elif sector in ["INFRASTRUCTURE"]:
+        lines.append("• Working capital intensive — evaluate debt levels and order book")
+    
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# COMPATIBILITY WRAPPER (maintains backward compatibility)
+# ---------------------------------------------------------------------------
+
+def generate_dynamic_ipo_details(company_name: str) -> dict:
+    """
+    Legacy wrapper maintained for backward compatibility with app.py.
+    Uses the new sector classification and analysis system.
+    """
+    sector = classify_sector_by_name(company_name)
+    peer = get_ipo_peer_comparison(sector)
+    
+    return {
+        "sector": sector,
+        "company_description": _generate_company_description(company_name, sector, peer),
+        "development_scope": _generate_development_scope(company_name, sector),
+        "growth_runway": _generate_growth_runway(company_name, sector, peer, 0),
+        "listing_gains_rationale": _generate_listing_rationale(sector, 0, 0, {"label": "Neutral", "score": 0, "total_items": 0}),
+        "financial_insights": _generate_financial_insights(sector, peer, 0, 0, 0),
+    }
+
+
+def parse_chittorgarh_date(date_str: str) -> str:
+    """Legacy wrapper."""
+    return _parse_date(date_str)
 
 
 def get_market_cap_info(ticker: str) -> dict:
@@ -171,7 +1477,7 @@ def get_market_cap_info(ticker: str) -> dict:
         stock = yf.Ticker(clean_ticker + ".NS")
         info = stock.info or {}
         mc = info.get("marketCap", 0)
-        mc_cr = mc / 1e7  # Convert to Crores
+        mc_cr = mc / 1e7
         classification = classify_market_cap(mc_cr)
         sector = info.get("sector", get_sector(ticker))
         industry = info.get("industry", "")
@@ -191,540 +1497,76 @@ def get_market_cap_info(ticker: str) -> dict:
 
 
 def enrich_picks_with_sector_mcap(picks_df: pd.DataFrame) -> pd.DataFrame:
-    """Add sector and market cap columns to picks DataFrame."""
+    """Legacy wrapper."""
     if picks_df is None or picks_df.empty:
         return picks_df
-    
     df = picks_df.copy()
-    
-    # Add sector column if not present
     if "Sector" not in df.columns and "Ticker" in df.columns:
         df["Sector"] = df["Ticker"].apply(get_sector)
-    
-    # Add market cap columns if not present
     if "Market_Cap" not in df.columns and "Ticker" in df.columns:
-        # Try to get market cap from LTP * shares outstanding
-        # Fall back to just sector info
         map_info = {}
         for t in df["Ticker"].unique():
             if t:
                 map_info[t] = get_market_cap_info(t)
-        
         df["Sector"] = df["Ticker"].map(lambda t: map_info.get(t, {}).get("sector", get_sector(t)) if t else "OTHER")
         df["Market_Cap"] = df["Ticker"].map(lambda t: map_info.get(t, {}).get("market_cap_class", "N/A") if t else "N/A")
         df["MCap_Cr"] = df["Ticker"].map(lambda t: map_info.get(t, {}).get("market_cap_cr", 0) if t else 0)
-    
     return df
 
 
-# ---------------------------------------------------------------------------
-# Dynamic Chittorgarh Scraper & Analysis Generator
-# ---------------------------------------------------------------------------
-def parse_chittorgarh_date(date_str: str) -> str:
-    """Parses a date string like 'Jul 15, 2026' into ISO format YYYY-MM-DD."""
-    if not date_str or date_str.strip() == "--":
-        return ""
-    try:
-        dt = datetime.datetime.strptime(date_str.strip(), "%b %d, %Y")
-        return dt.date().isoformat()
-    except Exception:
-        return date_str.strip()
-
-
-def generate_dynamic_ipo_details(company_name: str) -> dict:
-    """Generates professional, category-specific details and insights for scraped IPOs."""
-    name_lower = company_name.lower()
-    
-    # 1. Classify sector/domain based on company name keywords
-    if any(k in name_lower for k in ["tech", "soft", "digital", "system", "consultancy", "solution"]):
-        sector = "IT"
-    elif any(k in name_lower for k in ["pharma", "biotech", "life", "health", "hospital", "clinic", "med"]):
-        sector = "PHARMA"
-    elif any(k in name_lower for k in ["bank", "finance", "capital", "wealth", "credit", "fin", "invest"]):
-        sector = "FINANCIAL"
-    elif any(k in name_lower for k in ["infra", "construction", "road", "build", "engine", "project", "rail"]):
-        sector = "INFRA"
-    elif any(k in name_lower for k in ["solar", "wind", "green", "power", "energy", "clean"]):
-        sector = "ENERGY"
-    elif any(k in name_lower for k in ["food", "retail", "mart", "consumer", "beverage", "milk", "agro"]):
-        sector = "FMCG"
-    elif any(k in name_lower for k in ["metal", "steel", "iron", "copper", "aluminum", "mine"]):
-        sector = "METALS"
-    else:
-        sector = "OTHER"
-        
-    # 2. Structured templates for each sector
-    templates = {
-        "IT": {
-            "company_description": f"IT Consulting, Software-as-a-Service (SaaS), and Digital Solutions. {company_name} specializes in enterprise cloud architecture, automated QA systems, and custom AI integration plans for overseas commercial clients.",
-            "development_scope": "Excellent growth scope. Scaling global delivery centers in tier-2 Indian hubs, investing in next-gen cybersecurity protocols, and expanding its dedicated AI/ML developer workforce.",
-            "growth_runway": "High revenue growth opportunity (projected 18% CAGR) supported by robust digitisation pipelines and recurring multi-year software licensing contracts.",
-            "listing_gains_rationale": "High Probability. Very strong retail demand for technology counters. Listing day premium is expected around 20-30% if valuation multiples stay under 25x forward PE.",
-            "financial_insights": "Asset-light software business with high operating cash flows. Operating profit margins are strong (~22%) with zero net leverage on the balance sheet."
-        },
-        "PHARMA": {
-            "company_description": f"Generic Formulations, Active Pharmaceutical Ingredients (APIs), and CDMO Services. {company_name} develops life-saving therapeutics, oral solids, and custom biochemical solutions for global regulated markets.",
-            "development_scope": "Strong development runway. Constructing USFDA-compliant manufacturing facilities and expanding biotechnology R&D labs to capture the growing biosimilars market segment.",
-            "growth_runway": "Reliable revenue growth opportunity (expected 12-15% CAGR) driven by patent expirations in western markets and the ongoing global outsourcing pivot to India.",
-            "listing_gains_rationale": "Moderate-to-High Probability. Defensive healthcare counter with reliable long-term institutional backing. Listing Day gains are estimated at 15-20%.",
-            "financial_insights": "Healthy gross profit margins (~58%). Net debt is moderate (Debt/Equity 0.7x) following capital expansions, supported by a comfortable interest coverage ratio of 4.5x."
-        },
-        "FINANCIAL": {
-            "company_description": f"Non-Banking Finance Company (NBFC), Retail Micro-Lending, and Wealth Solutions. {company_name} provides vehicle financing, small business credit, and insurance distribution networks in semi-urban India.",
-            "development_scope": "Scope includes digital loan processing infrastructure to reduce acquisition costs, and establishing strategic co-lending joint-ventures with leading commercial banks.",
-            "growth_runway": "Significant growth opportunity. Credit demand in tier-2 and rural sectors remains highly underserved. Target loan book growth is projected at 20% CAGR.",
-            "listing_gains_rationale": "Moderate Probability. Sensitive to central bank policy cycles and credit cost benchmarks. Anticipated listing gains are in the range of 10-15% above issue price.",
-            "financial_insights": "Net Interest Margins (NIM) are strong at 7.2%. Net NPAs are stable at 1.8% with a robust capital adequacy ratio of 19%."
-        },
-        "INFRA": {
-            "company_description": f"Civil Infrastructure, Bridges & Highways, and EPC Engineering. {company_name} is an EPC contractor specializing in road connectivity, urban transport corridors, and industrial civil construction.",
-            "development_scope": "Expansion into metro rail grids, city sewage water treatment utilities, and hybrid annuity model (HAM) road concessions.",
-            "growth_runway": "Steady organic growth. Revenue pipeline is backed by a robust government project pipeline, though material price cycles and execution delays pose risks.",
-            "listing_gains_rationale": "Moderate/Low Probability. Capital-intensive operations lead to standard sector PE discounts. Listing day performance is likely to yield 5-10% gains.",
-            "financial_insights": "Asset-heavy balance sheet with operating profit margins around 11%. High working capital requirements (90 days) with net debt-to-equity at 1.3x."
-        },
-        "ENERGY": {
-            "company_description": f"Renewable Energy Generation, Green Hydrogen Projects, and Solar Utility. {company_name} constructs, commissions, and operates solar parks and wind energy grids for government and corporate power purchase.",
-            "development_scope": "Under-development pipeline of 8 GW utility capacity. Setting up green hydrogen hubs in western India and integrating smart battery storage systems.",
-            "growth_runway": "High growth potential. Firmly aligned with national ESG mandates targeting 500 GW of clean energy by 2030. 25-year sovereign PPAs secure long-term revenue visibility.",
-            "listing_gains_rationale": "High Probability. Premium investor sentiment for clean energy plays. Expected listing day premium is estimated at 20-25%.",
-            "financial_insights": "EBITDA margins are highly attractive at 42%. High leverage (Debt/Equity 1.8x) is normal for utility developers, backed by secure long-term operating cash flows."
-        },
-        "FMCG": {
-            "company_description": f"Consumer Packaged Goods, Branded Packaged Foods, and Personal Care. {company_name} manufactures, packages, and distributes branded grocery items, snacks, and skin-care ranges across urban and rural markets.",
-            "development_scope": "Expanding Direct-to-Consumer (D2C) channels and establishing dedicated micro-distribution centers to double rural merchant reach.",
-            "growth_runway": "Steady growth runway (10% CAGR) driven by rising consumer disposable incomes and product premiumisation in tier-2 cities.",
-            "listing_gains_rationale": "Moderate Probability. Strong consumer brand affinity, but demanding valuations at launch may cap initial listing day gains to 10-15%.",
-            "financial_insights": "Excellent cash-generative business profile with near-zero working capital requirements. Zero net debt with a return on equity (RoE) of 22%."
-        },
-        "METALS": {
-            "company_description": f"Steel Fabrication, Metal Alloys, and Ore Processing. {company_name} operates steel manufacturing units and supplies custom metal structural components to the industrial sector.",
-            "development_scope": "Upgrading furnace efficiencies to reduce energy overheads, and expanding capacities for high-margin automotive alloy steel products.",
-            "growth_runway": "Cyclical growth tied to infrastructure demand cycles and global ore price benchmarks. Revenue growth expected to average 7-9% CAGR.",
-            "listing_gains_rationale": "Low Probability. Metal and mining plays are treated as cyclical commodity stocks, rarely seeing high listing gains. Expected gains of 0-8%.",
-            "financial_insights": "Profit margins are subject to scrap and coking coal price volatility. Return on capital is moderate (~12%) with standard capital expenditure cycles."
-        },
-        "OTHER": {
-            "company_description": f"Precision Manufacturing, Engineering Spares, and Industrial Services. {company_name} designs and manufactures specialized components, custom enclosures, and spares for general engineering utilities.",
-            "development_scope": "Modernizing machinery with CNC automated systems, and setting up export sales channels in South-East Asia.",
-            "growth_runway": "Stable organic growth (8-10% CAGR) aligned with domestic industrial activity and product contract execution.",
-            "listing_gains_rationale": "Moderate Probability. Listing day performance will track overall market index levels. Expected listing gain of 5-10%.",
-            "financial_insights": "Consistent operational record. Debt-to-equity is comfortable at 0.4x with a stable return on capital employed (RoCE) of 14%."
-        }
-    }
-    
-    details = templates.get(sector, templates["OTHER"])
-    details["sector"] = sector
-    return details
-
-
 def scrape_ipos_from_chittorgarh() -> list[dict]:
-    """Scrapes India's leading mainboard IPO tracker to fetch live upcoming and ongoing IPOs.
-    
-    Acts as a reliable, free alternative to the NSE API which blocks cloud-server IPs.
-    """
-    url = "https://www.chittorgarh.com/report/mainboard-ipo-list-in-india-bse-nse/83/"
-    try:
-        scrape_headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-        resp = requests.get(url, headers=scrape_headers, timeout=10)
-        if resp.status_code != 200:
-            print(f"[IPO Web Scraper] Status code: {resp.status_code}")
-            return []
-            
-        soup = BeautifulSoup(resp.content, "html.parser")
-        table = soup.find("table")
-        if not table:
-            return []
-            
-        rows = table.find_all("tr")[1:]  # skip header
-        scraped_list = []
-        
-        for row in rows:
-            cols = row.find_all("td")
-            if len(cols) < 5:
-                continue
-                
-            # 1. Parse raw text
-            raw_name = cols[0].text.replace(" IPO", "").strip()
-            open_raw = cols[1].text.strip()
-            close_raw = cols[2].text.strip()
-            listing_raw = cols[3].text.strip()
-            price_raw = cols[4].text.strip()
-            gain_pct_raw = cols[5].text.strip()
-            
-            # Skip if name is empty
-            if not raw_name:
-                continue
-                
-            # 2. Convert date strings to YYYY-MM-DD
-            open_date = parse_chittorgarh_date(open_raw)
-            close_date = parse_chittorgarh_date(close_raw)
-            listing_date = parse_chittorgarh_date(listing_raw)
-            
-            # 3. Clean price band (e.g., '125 to 135' -> '125-135')
-            price_band = price_raw.replace(" to ", "-").replace(",", "").strip()
-            
-            # Determine lot size & min amount
-            min_amount = 14500
-            lot_size = 50
-            try:
-                # Extract upper price from price band '125-135' or single price '135'
-                price_parts = price_band.split("-")
-                upper_price = float(price_parts[-1]) if price_parts else 0.0
-                if upper_price > 0:
-                    # Retail applications in India are capped near ₹15,000 per lot
-                    lot_size = int(np.round(14500 / upper_price))
-                    min_amount = int(lot_size * upper_price)
-            except Exception:
-                pass
-                
-            # 4. Enforce status (Upcoming, Ongoing, Listed)
-            today = datetime.date.today()
-            status = "Upcoming"
-            
-            # If dates exist, compare with today (July 16, 2026)
-            try:
-                open_dt = datetime.datetime.strptime(open_date, "%Y-%m-%d").date()
-                close_dt = datetime.datetime.strptime(close_date, "%Y-%m-%d").date()
-                
-                if today < open_dt:
-                    status = "Upcoming"
-                elif open_dt <= today <= close_dt:
-                    status = "Ongoing"
-                else:
-                    status = "Closed"
-            except Exception:
-                # Fallback check via gain_pct column (if it listed, it has numbers)
-                if gain_pct_raw != "--":
-                    status = "Listed"
-                    
-            # If closed but listing_date is past or CMP exists, label as Listed
-            if status == "Closed":
-                try:
-                    list_dt = datetime.datetime.strptime(listing_date, "%Y-%m-%d").date()
-                    if today >= list_dt or gain_pct_raw != "--":
-                        status = "Listed"
-                except Exception:
-                    if gain_pct_raw != "--":
-                        status = "Listed"
-                        
-            # 5. Build mock symbol (e.g. first word up to 8 chars)
-            first_word = raw_name.split()[0].replace(",", "").replace(".", "").upper()
-            symbol = f"{first_word[:8]}"
-            
-            # 6. Generate detailed company insights dynamically based on name keywords
-            details = generate_dynamic_ipo_details(raw_name)
-            
-            scraped_list.append({
-                "name": raw_name,
-                "symbol": symbol,
-                "status": status,
-                "price_band": price_band,
-                "min_amount": min_amount,
-                "open_date": open_date,
-                "close_date": close_date,
-                "lot_size": lot_size,
-                "listing_date": listing_date,
-                "source": "Web Scraper (Chittorgarh)",
-                # Detailed analysis fields
-                "company_description": details["company_description"],
-                "development_scope": details["development_scope"],
-                "growth_runway": details["growth_runway"],
-                "listing_gains_rationale": details["listing_gains_rationale"],
-                "financial_insights": details["financial_insights"]
-            })
-            
-        return scraped_list
-    except Exception as e:
-        print(f"[IPO Web Scraper] Error scraping Chittorgarh: {e}")
-        return []
+    """Legacy wrapper — now just calls scrape_chittorgarh with compatible output."""
+    ipos = scrape_chittorgarh()
+    # Add legacy fields for backward compatibility
+    for ipo in ipos:
+        details = generate_dynamic_ipo_details(ipo.get("name", ""))
+        ipo["company_description"] = details["company_description"]
+        ipo["development_scope"] = details["development_scope"]
+        ipo["growth_runway"] = details["growth_runway"]
+        ipo["listing_gains_rationale"] = details["listing_gains_rationale"]
+        ipo["financial_insights"] = details["financial_insights"]
+    return ipos
 
 
 def fetch_ipo_list() -> list[dict]:
-    """
-    Fetches real-time active IPOs strictly from the NSE API.
-    No static fallbacks are used, ensuring 100% live data.
-    """
-    ipo_list = []
-    
-    try:
-        from nsepython import nsefetch
-        # Fetch current active issues directly from NSE bypassing standard request blocks
-        data = nsefetch('https://www.nseindia.com/api/ipo-current-issue')
-        
-        if data and isinstance(data, list):
-            for item in data:
-                raw_name = item.get("companyName", "Unnamed IPO")
-                # Generate rich AI insights for this live IPO dynamically
-                details = generate_dynamic_ipo_details(raw_name)
-                
-                ipo_list.append({
-                    "name": raw_name,
-                    "symbol": item.get("symbol", ""),
-                    "status": item.get("status", "Ongoing"),
-                    "price_band": item.get("issuePrice", "N/A"),
-                    "min_amount": 0, # Not provided in this endpoint
-                    "open_date": item.get("issueStartDate", ""),
-                    "close_date": item.get("issueEndDate", ""),
-                    "lot_size": 0,
-                    "listing_date": "TBA",
-                    "source": "NSE Live API",
-                    "company_description": details["company_description"],
-                    "development_scope": details["development_scope"],
-                    "growth_runway": details["growth_runway"],
-                    "listing_gains_rationale": details["listing_gains_rationale"],
-                    "financial_insights": details["financial_insights"]
-                })
-    except Exception as e:
-        print(f"[IPO Live Fetcher] Error fetching from NSE: {e}")
-            
-    return ipo_list
-
-
-def save_ipo_cache(ipo_list: list[dict]):
-    """Save IPO list to cache."""
-    if _IPO_CACHE_PATH:
-        try:
-            with open(_IPO_CACHE_PATH, "w", encoding="utf-8") as f:
-                json.dump(ipo_list, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"Error saving IPO cache: {e}")
-
-
-def load_ipo_cache() -> list[dict]:
-    """Load IPO list from cache."""
-    if _IPO_CACHE_PATH and os.path.exists(_IPO_CACHE_PATH):
-        try:
-            with open(_IPO_CACHE_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return []
-
-
-def get_live_ipos() -> list[dict]:
-    """Get live IPO data, falling back to cache."""
-    live = fetch_ipo_list()
-    if live:
-        save_ipo_cache(live)
-        return live
-    return load_ipo_cache()
+    """Legacy wrapper — now returns full merged IPO list."""
+    return get_live_ipos()
 
 
 # ---------------------------------------------------------------------------
-# IPO Analysis Engine
+# LEGACY ANALYSIS FUNCTIONS (maintained for compatibility but now use new engine)
 # ---------------------------------------------------------------------------
-def analyze_ipo(ipo: dict) -> dict:
-    """
-    Perform comprehensive IPO analysis.
-    Returns analysis with financial insights, domain assessment, and recommendation.
-    """
-    name = ipo.get("name", "Unknown")
-    symbol = ipo.get("symbol", "")
-    
-    # Domain / Sector analysis
-    sector = "N/A"
-    if symbol:
-        sector = get_sector(symbol)
-    
-    # Price band analysis
-    price_band = ipo.get("price_band", "N/A")
-    min_amount = ipo.get("min_amount", 0)
-    lot_size = ipo.get("lot_size", 0)
-    
-    # Estimate financial metrics using yfinance (if similar listed peers exist)
-    peer_analysis = {}
-    if sector != "N/A" and sector != "OTHER":
-        peer_analysis = _analyze_sector_peers(sector)
-    
-    # Listing gain probability
-    listing_score = _calculate_listing_score(ipo, sector, peer_analysis)
-    
-    # Revenue growth opportunity assessment
-    growth_assessment = _assess_growth_potential(ipo, sector, peer_analysis)
-    
-    # Overall rating
-    overall_score = (listing_score["score"] + growth_assessment["score"]) / 2
-    
-    # Recommendation
-    if overall_score >= 75:
-        recommendation = "STRONG BUY"
-        recommendation_reason = "Strong fundamentals with high listing gain potential"
-    elif overall_score >= 60:
-        recommendation = "BUY"
-        recommendation_reason = "Good prospects with reasonable valuation"
-    elif overall_score >= 40:
-        recommendation = "HOLD / SUBSCRIBE"
-        recommendation_reason = "Fair opportunity, moderate upside potential"
-    elif overall_score >= 25:
-        recommendation = "AVOID"
-        recommendation_reason = "Risky with limited upside"
-    else:
-        recommendation = "SKIP"
-        recommendation_reason = "Unfavorable risk-reward profile"
-        
-    # Fetch LIVE real-time news / social media links via RSS
-    live_news = []
-    try:
-        import urllib.request
-        import urllib.parse
-        import xml.etree.ElementTree as ET
-        query = urllib.parse.quote(f'"{name}" IPO')
-        url = f"https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=4) as response:
-            xml_data = response.read()
-        root = ET.fromstring(xml_data)
-        for item in root.findall('.//item')[:4]:
-            live_news.append({
-                "title": item.find('title').text,
-                "link": item.find('link').text
-            })
-    except Exception as e:
-        print(f"Error fetching live news for {name}: {e}")
-    
-    return {
-        "name": name,
-        "symbol": symbol,
-        "sector": sector,
-        "status": ipo.get("status", "Upcoming"),
-        "price_band": price_band,
-        "open_date": ipo.get("open_date", ""),
-        "close_date": ipo.get("close_date", ""),
-        "listing_date": ipo.get("listing_date", ""),
-        "min_amount": min_amount,
-        "lot_size": lot_size,
-        "peer_analysis": peer_analysis,
-        "listing_gain_probability": listing_score["label"],
-        "listing_gain_score": round(listing_score["score"], 1),
-        "growth_assessment": growth_assessment["summary"],
-        "growth_score": round(growth_assessment["score"], 1),
-        "overall_score": round(overall_score, 1),
-        "recommendation": recommendation,
-        "recommendation_reason": recommendation_reason,
-        # Live Aggregated News
-        "live_news": live_news,
-        # Detailed text fields
-        "company_description": ipo.get("company_description", "No description available."),
-        "development_scope": ipo.get("development_scope", "Steady industry trends expected."),
-        "growth_runway": ipo.get("growth_runway", "Moderate growth anticipated."),
-        "listing_gains_rationale": ipo.get("listing_gains_rationale", "Subject to listing-day market sentiment."),
-        "financial_insights": ipo.get("financial_insights", "Valuation aligned with sector averages.")
-    }
 
-
-@_cache_data_decorator(ttl=86400)
 def _analyze_sector_peers(sector: str) -> dict:
-    """Analyze sector peers for valuation comparison."""
-    # Find peer stocks in the same sector
-    peers = [sym for sym, sec in _NSE_SECTOR_MAP.items() if sec == sector][:5]
-    
-    avg_pe = 0
-    avg_revenue_growth = 0
-    count = 0
-    
-    for peer in peers:
-        try:
-            import yfinance as yf
-            stock = yf.Ticker(peer + ".NS")
-            info = stock.info or {}
-            pe = info.get("trailingPE", 0) or info.get("forwardPE", 0)
-            rev_growth = info.get("revenueGrowth", 0)
-            if pe and pe > 0:
-                avg_pe += pe
-                count += 1
-            if rev_growth:
-                avg_revenue_growth += rev_growth
-        except Exception:
-            continue
-    
-    sector_peers = {
-        "sector": sector,
-        "peers_found": count,
-        "avg_pe": round(avg_pe / count, 2) if count > 0 else 0,
-        "avg_revenue_growth": round((avg_revenue_growth / count) * 100, 2) if count > 0 else 0,
-    }
-    
-    # Add sector assessment
-    high_growth_sectors = ["IT", "PHARMA", "HEALTHCARE", "FINANCIAL", "RETAIL", "TELECOM"]
-    defensive_sectors = ["FMCG", "PHARMA", "HEALTHCARE", "POWER"]
-    
-    if sector in high_growth_sectors:
-        sector_peers["sector_outlook"] = "High Growth"
-    elif sector in defensive_sectors:
-        sector_peers["sector_outlook"] = "Defensive / Stable"
-    else:
-        sector_peers["sector_outlook"] = "Cyclical"
-    
-    return sector_peers
+    """Legacy wrapper."""
+    return get_ipo_peer_comparison(sector)
 
 
 def _calculate_listing_score(ipo: dict, sector: str, peer_analysis: dict) -> dict:
-    """Calculate listing gain probability score (0-100)."""
-    score = 50  # Baseline
-    
-    # Sector premium
-    premium_sectors = ["IT", "PHARMA", "HEALTHCARE", "FINANCIAL", "RETAIL"]
-    if sector in premium_sectors:
-        score += 10
-    elif sector in ["FMCG", "DEFENCE"]:
-        score += 5
-    
-    # Price band (lower band = more headroom for listing gains)
-    price_band_str = ipo.get("price_band", "0-0")
-    try:
-        parts = price_band_str.split("-")
-        if len(parts) == 2:
-            lower = float(parts[0])
-            upper = float(parts[1])
-            if upper > lower:
-                discount = (upper - lower) / lower
-                if discount > 0.10:  # >10% band = room for gains
-                    score += 5
-    except Exception:
-        pass
-    
-    # Peer comparison boost
-    if peer_analysis.get("avg_pe", 0) > 20:
-        score += 5  # Sector supports premium valuation
-    
-    # Determine label
-    if score >= 70:
-        label = "High Probability"
-    elif score >= 50:
-        label = "Moderate Probability"
-    else:
-        label = "Low Probability"
-    
-    return {"score": score, "label": label}
+    """Legacy wrapper — delegates to scoring engine."""
+    scores = _compute_ipo_scores(
+        sector=sector,
+        mid_price=0,
+        lower_price=float(ipo.get("lower_price", 0) or 0),
+        upper_price=float(ipo.get("upper_price", 0) or 0),
+        gmp_value=0,
+        listing_gain_pct=0,
+        peer_analysis=peer_analysis,
+        sentiment={"label": "Neutral", "score": 0, "total_items": 0},
+        news_items=[],
+        ipo=ipo,
+    )
+    return {"score": scores["listing"], "label": scores["listing_label"]}
 
 
 def _assess_growth_potential(ipo: dict, sector: str, peer_analysis: dict) -> dict:
-    """Assess revenue growth and development potential."""
-    score = 50  # Baseline
-    
-    # Sector-based growth assessment  
-    high_growth = ["IT", "PHARMA", "HEALTHCARE", "FINANCIAL", "RETAIL", "TELECOM", "ENERGY"]
-    moderate_growth = ["AUTO", "FMCG", "INFRA", "CHEMICALS", "CEMENT"]
-    
-    if sector in high_growth:
-        score += 15
-        summary = f"Strong growth potential — {sector} sector is experiencing rapid expansion"
-    elif sector in moderate_growth:
-        score += 8
-        summary = f"Moderate growth potential — {sector} sector has steady demand"
-    else:
-        summary = f"Cyclical sector — growth tied to economic conditions"
-    
-    # Peer growth comparison
-    avg_growth = peer_analysis.get("avg_revenue_growth", 0)
-    if avg_growth > 15:
-        score += 10
-        summary += " with strong peer revenue growth"
-    elif avg_growth > 8:
-        score += 5
-        summary += " with healthy peer performance"
-    
-    return {"score": score, "summary": summary}
+    """Legacy wrapper."""
+    scores = _compute_ipo_scores(
+        sector=sector,
+        mid_price=0, lower_price=0, upper_price=0,
+        gmp_value=0, listing_gain_pct=0,
+        peer_analysis=peer_analysis,
+        sentiment={"label": "Neutral", "score": 0, "total_items": 0},
+        news_items=[], ipo=ipo,
+    )
+    return {"score": scores["growth"], "summary": scores["growth_summary"]}
