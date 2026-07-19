@@ -1,0 +1,292 @@
+"""
+persistent_cache.py
+Multi-tier caching system for Streamlit Cloud persistence.
+Solves the problem of cache files being wiped on every deploy/restart.
+
+Storage tiers (attempted in order):
+  1. st.session_state (per-session, survives interactions)
+  2. On-disk JSON cache file (wiped on Streamlit Cloud deploy)
+  3. GitHub Gist backup (survives deploy - OPTIONAL: set secrets)
+
+GitHub Gist Setup (optional but recommended for Streamlit Cloud):
+  In Streamlit Cloud dashboard -> Settings -> Secrets -> Add:
+    GITHUB_GIST_TOKEN = "ghp_your_personal_access_token"
+    GITHUB_GIST_ID = "your_gist_id"
+  Create a gist at https://gist.github.com with any content,
+  copy its ID from the URL (e.g., "abc123def456")
+
+Usage:
+  from persistent_cache import cache_get, cache_set, cache_clear
+  
+  cache_set("ipo_data", my_ipo_list)
+  data = cache_get("ipo_data", default=[])
+"""
+import json
+import os
+import datetime
+from typing import Any, Optional
+
+try:
+    import streamlit as st
+    _HAS_STREAMLIT = True
+except ImportError:
+    _HAS_STREAMLIT = False
+
+# ---------------------------------------------------------------------------
+# Cache file paths
+# ---------------------------------------------------------------------------
+_DIR = os.path.dirname(os.path.abspath(__file__))
+_CACHE_DIR = os.path.join(_DIR, ".cache")
+os.makedirs(_CACHE_DIR, exist_ok=True)
+_UNIFIED_CACHE_PATH = os.path.join(_CACHE_DIR, "unified_cache.json")
+
+# Version constant - bump to invalidate all caches after code changes
+_CACHE_VERSION = "v2"
+
+# ---------------------------------------------------------------------------
+# GitHub Gist Backup (optional - requires secrets)
+# ---------------------------------------------------------------------------
+_GIST_TOKEN = os.environ.get("GITHUB_GIST_TOKEN", "")
+_GIST_ID = os.environ.get("GITHUB_GIST_ID", "")
+_HAS_GIST = bool(_GIST_TOKEN and _GIST_ID)
+
+if _HAS_GIST:
+    try:
+        import urllib.request
+    except ImportError:
+        _HAS_GIST = False
+
+
+def _gist_save(data: dict) -> bool:
+    """Save cache to GitHub Gist. Returns True on success."""
+    if not _HAS_GIST:
+        return False
+    try:
+        payload = {
+            "files": {
+                "nse_pulse_cache_v2.json": {
+                    "content": json.dumps(data, indent=2, ensure_ascii=False)
+                }
+            }
+        }
+        req = urllib.request.Request(
+            f"https://api.github.com/gists/{_GIST_ID}",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"token {_GIST_TOKEN}",
+                "Content-Type": "application/json",
+                "User-Agent": "NSE-Pulse-Cache/2.0"
+            },
+            method="PATCH"
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def _gist_load() -> dict:
+    """Load cache from GitHub Gist. Returns dict on success, empty dict on failure."""
+    if not _HAS_GIST:
+        return {}
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/gists/{_GIST_ID}",
+            headers={
+                "Authorization": f"token {_GIST_TOKEN}",
+                "User-Agent": "NSE-Pulse-Cache/2.0"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            gist_data = json.loads(resp.read().decode("utf-8"))
+        
+        files = gist_data.get("files", {})
+        for fname, fdata in files.items():
+            if fname.startswith("nse_pulse_cache") and fdata.get("content"):
+                content = json.loads(fdata["content"])
+                if content.get("_version") == _CACHE_VERSION:
+                    return content.get("data", {})
+        return {}
+    except Exception:
+        return {}
+
+
+# ---------------------------------------------------------------------------
+# Core cache operations
+# ---------------------------------------------------------------------------
+
+def _get_cache_from_disk() -> dict:
+    """Load the unified cache from disk. Returns empty dict on failure."""
+    try:
+        if os.path.exists(_UNIFIED_CACHE_PATH):
+            with open(_UNIFIED_CACHE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if data.get("_version") == _CACHE_VERSION:
+                return data.get("data", {})
+    except Exception:
+        pass
+    return {}
+
+
+def _save_cache_to_disk(data: dict):
+    """Save the unified cache to disk. Silently fails on read-only filesystems."""
+    try:
+        os.makedirs(os.path.dirname(_UNIFIED_CACHE_PATH), exist_ok=True)
+        payload = {
+            "_version": _CACHE_VERSION,
+            "_updated": datetime.datetime.now().isoformat(),
+            "data": data,
+        }
+        with open(_UNIFIED_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, ensure_ascii=False)
+        # Also try to backup to GitHub Gist
+        if _HAS_GIST:
+            try:
+                _gist_save(payload)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def cache_get(key: str, default: Any = None) -> Any:
+    """
+    Retrieve a value from the multi-tier cache.
+    
+    Tier 1: st.session_state (per-session, fastest)
+    Tier 2: On-disk JSON file
+    Tier 3: GitHub Gist backup (if configured)
+    """
+    # Tier 1: session state
+    if _HAS_STREAMLIT:
+        ss_key = f"_cache_{key}"
+        if ss_key in st.session_state:
+            return st.session_state[ss_key]
+    
+    # Tier 2: disk cache
+    disk_cache = _get_cache_from_disk()
+    if key in disk_cache:
+        value = disk_cache[key]
+        if _HAS_STREAMLIT:
+            st.session_state[f"_cache_{key}"] = value
+        return value
+    
+    # Tier 3: GitHub Gist backup
+    if _HAS_GIST:
+        gist_cache = _gist_load()
+        if key in gist_cache:
+            value = gist_cache[key]
+            _save_cache_to_disk({key: value})
+            if _HAS_STREAMLIT:
+                st.session_state[f"_cache_{key}"] = value
+            return value
+    
+    return default
+
+
+def cache_set(key: str, value: Any):
+    """
+    Store a value in all available cache tiers.
+    """
+    if _HAS_STREAMLIT:
+        st.session_state[f"_cache_{key}"] = value
+    
+    try:
+        disk_cache = _get_cache_from_disk()
+        disk_cache[key] = value
+        _save_cache_to_disk(disk_cache)
+    except Exception:
+        pass
+
+
+def cache_clear(key: Optional[str] = None):
+    """Clear cache. If key is None, clears all caches."""
+    if _HAS_STREAMLIT:
+        if key:
+            ss_key = f"_cache_{key}"
+            if ss_key in st.session_state:
+                del st.session_state[ss_key]
+        else:
+            keys_to_delete = [k for k in st.session_state.keys() if k.startswith("_cache_")]
+            for k in keys_to_delete:
+                del st.session_state[k]
+    
+    if key:
+        try:
+            disk_cache = _get_cache_from_disk()
+            if key in disk_cache:
+                del disk_cache[key]
+                _save_cache_to_disk(disk_cache)
+        except Exception:
+            pass
+    else:
+        try:
+            if os.path.exists(_UNIFIED_CACHE_PATH):
+                os.remove(_UNIFIED_CACHE_PATH)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Convenience functions for specific cache domains
+# ---------------------------------------------------------------------------
+
+def get_ipo_cache() -> list:
+    return cache_get("ipo_list", default=[])
+
+def set_ipo_cache(ipo_list: list):
+    cache_set("ipo_list", ipo_list)
+
+def get_news_cache() -> list:
+    return cache_get("news_list", default=[])
+
+def set_news_cache(news_list: list):
+    cache_set("news_list", news_list)
+
+def get_analysis_history() -> dict:
+    return cache_get("analysis_history", default={"runs": [], "last_run_date": ""})
+
+def set_analysis_history(history: dict):
+    cache_set("analysis_history", history)
+
+def get_backtest_cache(name: str) -> list:
+    return cache_get(f"backtest_{name}", default=[])
+
+def set_backtest_cache(name: str, data: list):
+    cache_set(f"backtest_{name}", data)
+
+def get_brokers_cache() -> list:
+    return cache_get("brokers_list", default=[])
+
+def set_brokers_cache(brokers_list: list):
+    cache_set("brokers_list", brokers_list)
+
+
+# ---------------------------------------------------------------------------
+# Migration helper: move existing legacy cache files into unified cache
+# ---------------------------------------------------------------------------
+def migrate_legacy_caches():
+    """
+    One-time migration of all legacy cache files into the unified cache.
+    Call this once at app startup.
+    """
+    legacy_caches = {
+        "ipo_list": "ipo_cache.json",
+        "news_list": "news_cache.json",
+        "analysis_history": "analysis_history_cache.json",
+        "brokers_list": "brokers_cache.json",
+    }
+    
+    for cache_key, legacy_file in legacy_caches.items():
+        existing = cache_get(cache_key)
+        empty_defaults = [None, [], {}, {"runs": [], "last_run_date": ""}]
+        if existing in empty_defaults:
+            legacy_path = os.path.join(_DIR, legacy_file)
+            if os.path.exists(legacy_path):
+                try:
+                    with open(legacy_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    cache_set(cache_key, data)
+                    print(f"[Cache] Migrated {legacy_file} -> unified cache ({cache_key})")
+                except Exception as e:
+                    print(f"[Cache] Failed to migrate {legacy_file}: {e}")

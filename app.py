@@ -1331,9 +1331,38 @@ def _start_background_analysis(raw, strategy, min_price, min_vol_ratio, mode="fu
     return state, thread
 
 
+def _score_pick(row: dict) -> float:
+    score = 0.0
+    rr_raw = row.get("Risk_Reward", "") or ""
+    try:
+        if isinstance(rr_raw, (int, float)):
+            rr = float(rr_raw)
+        elif ":" in str(rr_raw):
+            rr = float(rr_raw.split(":")[-1].split()[0])
+        else:
+            rr = float(str(rr_raw).replace("Long", "").strip() or 1)
+        score += min(rr / 2, 30)
+    except: pass
+    vol_raw = row.get("Vol_Ratio", "") or ""
+    try:
+        vol = float(vol_raw) if vol_raw else 0
+        score += min(vol * 5, 20)
+    except: pass
+    rsi_raw = row.get("RSI", "") or ""
+    try:
+        rsi = float(rsi_raw) if rsi_raw else 50
+        if 30 <= rsi <= 70: score += 15
+        elif 20 <= rsi <= 80: score += 10
+    except: pass
+    if row.get("High_Conviction") or row.get("Institutional_Details"): score += 20
+    if row.get("Superstar_Buying"): score += 25
+    return score
+
+
 def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
     """
     Renders stock pick cards in a 3-column grid.
+    Limits to top 5 per section, sorted by probability of target hit.
     ltp_map: pre-fetched dict {ticker -> ltp_float}
     """
     df = _ensure_ticker_column(df)
@@ -1343,6 +1372,15 @@ def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
         return
 
     rows = df.to_dict("records")
+    
+    # Score and sort by probability of target hit
+    for r in rows:
+        r["_score"] = _score_pick(r)
+    rows.sort(key=lambda x: x.get("_score", 0), reverse=True)
+    
+    # Limit to top 5
+    rows = rows[:5]
+    
     # Render in rows of 3
     for row_start in range(0, len(rows), 3):
         chunk = rows[row_start:row_start + 3]
@@ -1384,7 +1422,17 @@ def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
                 pills += f'<span class="pill">{float(vol_r):.1f}x Vol</span>'
 
             extra = ""
-            if row.get("Type") == "SELL-BUY":
+            # Institutional buyer info (who bought and when) - takes priority
+            inst_details = row.get("Institutional_Details", "")
+            if inst_details:
+                # Parse institutional details for buyer name and date
+                # Format: "Investor Name (Date)" or just "Investor Name"
+                inst_name = inst_details.split("(")[0].strip() if inst_details else ""
+                inst_date = inst_details.split("(")[-1].replace(")", "") if "(" in inst_details else ""
+                extra = f'<span class="pill pill-inst" style="color:#00c853;border-color:rgba(0,200,83,0.4);background:rgba(0,200,83,0.12);">💎 {inst_name}</span>'
+                if inst_date:
+                    extra += f'<span class="pill" style="color:#a78bfa;">📅 {inst_date}</span>'
+            elif row.get("Type") == "SELL-BUY":
                 extra = '<span class="pill pill-neg">🔴 SHORT</span>'
             elif row.get("Superstar_Buying"):
                 names = row.get("Superstar_Names", "Superstar")
