@@ -2203,9 +2203,9 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
         else:
             # Filter IPOs
             if ipo_filter == "Ongoing & Upcoming":
-                filtered = [i for i in ipo_list if i.get("status", "").lower() in ["upcoming", "open", "ongoing"]]
+                filtered = [i for i in ipo_list if i.get("status", "").lower() in ["upcoming", "open", "ongoing", "active"]]
             elif ipo_filter == "Ongoing Only":
-                filtered = [i for i in ipo_list if i.get("status", "").lower() in ["ongoing", "open"]]
+                filtered = [i for i in ipo_list if i.get("status", "").lower() in ["ongoing", "open", "active"]]
             elif ipo_filter == "Upcoming Only":
                 filtered = [i for i in ipo_list if i.get("status", "").lower() == "upcoming"]
             elif ipo_filter == "Listed / Historical":
