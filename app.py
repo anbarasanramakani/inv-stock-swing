@@ -1354,7 +1354,7 @@ def _score_pick(row: dict) -> float:
         if 30 <= rsi <= 70: score += 15
         elif 20 <= rsi <= 80: score += 10
     except: pass
-    if row.get("High_Conviction") or row.get("Institutional_Details"): score += 20
+    if row.get("High_Conviction") or (isinstance(row.get("Institutional_Details"), str) and row.get("Institutional_Details")): score += 20
     if row.get("Superstar_Buying"): score += 25
     return score
 
