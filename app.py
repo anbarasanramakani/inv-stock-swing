@@ -1424,11 +1424,13 @@ def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
             extra = ""
             # Institutional buyer info (who bought and when) - takes priority
             inst_details = row.get("Institutional_Details", "")
-            if inst_details:
+            if inst_details and isinstance(inst_details, str):
                 # Parse institutional details for buyer name and date
                 # Format: "Investor Name (Date)" or just "Investor Name"
-                inst_name = inst_details.split("(")[0].strip() if inst_details else ""
-                inst_date = inst_details.split("(")[-1].replace(")", "") if "(" in inst_details else ""
+                # If there are multiple separated by " | ", just take the first one for the pill
+                first_inst = inst_details.split(" | ")[0]
+                inst_name = first_inst.split("(")[0].strip() if first_inst else ""
+                inst_date = first_inst.split("(")[-1].replace(")", "") if "(" in first_inst else ""
                 extra = f'<span class="pill pill-inst" style="color:#00c853;border-color:rgba(0,200,83,0.4);background:rgba(0,200,83,0.12);">💎 {inst_name}</span>'
                 if inst_date:
                     extra += f'<span class="pill" style="color:#a78bfa;">📅 {inst_date}</span>'
