@@ -2285,58 +2285,45 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                     peers = ipo_analysis.get("peer_analysis", {})
                     peer_badge = f'<span class="pill" style="color:#38bdf8;">📊 {peers.get("peers_found", 0)} peers</span>' if peers.get("peers_found", 0) > 0 else ""
                     
-                    st.markdown(f"""
-                    <div class="terminal-card" style="border:1px solid {border_color};">
-                      <div class="left-bar" style="background:{rec_color};"></div>
-                      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
-                        <div style="flex:1;min-width:200px;">
-                          <div style="font-size:1.05rem;font-weight:800;color:#f0f6ff;">{ipo_analysis.get('name','')}</div>
-                          <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
-                            <span class="pill">{ipo_analysis.get('sector','N/A')}</span>
-                            <span class="pill">{ipo_analysis.get('status','N/A')}</span>
-                            <span class="pill">{ipo_analysis.get('price_band','N/A')}</span>
-                            {gmp_badge}
-                            {sent_badge}
-                            {peer_badge}
-                          </div>
-                        </div>
-                        <div style="text-align:right;">
-                          <div style="font-size:0.85rem;font-weight:700;color:{rec_color};background:{rec_bg};
-                                      border:1px solid {border_color};border-radius:20px;padding:4px 16px;display:inline-block;">
-                            {rec}
-                          </div>
-                          <div style="font-size:0.68rem;color:#5a7a9a;margin-top:4px;">Score: {ipo_analysis.get('overall_score',0)}/100</div>
-                        </div>
-                      </div>
-                      <div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;border-top:1px solid #0d1f35;padding-top:9px;">
-                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Listing Gain</span><br>
-                             <span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('listing_gain_probability','N/A')} ({ipo_analysis.get('listing_gain_score',0)})</span></div>
-                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Growth</span><br>
-                             <span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('growth_score',0)}/100</span></div>
-                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Financials</span><br>
-                             <span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('financial_score',0)}/100</span></div>
-                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Valuation</span><br>
-                             <span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('valuation_score',0)}/100</span></div>
-                      </div>
-                      <div style="margin-top:6px;font-size:0.72rem;color:#8aaccc;line-height:1.6;">
-                        {ipo_analysis.get('recommendation_reason','')}
-                      </div>
-                      {f'''
-                      <div style="margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;border-top:1px solid #0d1f35;padding-top:8px;">
-                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Open</span><br>
-                             <span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('open_date','N/A')}</span></div>
-                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Close</span><br>
-                             <span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('close_date','N/A')}</span></div>
-                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Listing</span><br>
-                             <span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('listing_date','N/A')}</span></div>
-                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Lot Size</span><br>
-                             <span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('lot_size','N/A')}</span></div>
-                        <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Min Amount</span><br>
-                             <span style="font-size:0.72rem;color:#dde5f0;">₹{ipo_analysis.get('min_amount',0):,.0f}</span></div>
-                      </div>
-                      ''' if ipo_analysis.get('open_date') else ''}
-                    </div>
-                    """, unsafe_allow_html=True)
+                    open_date_html = ""
+                    if ipo_analysis.get('open_date'):
+                        open_date_html = f"""<div style="margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;border-top:1px solid #0d1f35;padding-top:8px;">
+<div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Open</span><br><span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('open_date','N/A')}</span></div>
+<div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Close</span><br><span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('close_date','N/A')}</span></div>
+<div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Listing</span><br><span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('listing_date','N/A')}</span></div>
+<div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Lot Size</span><br><span style="font-size:0.72rem;color:#dde5f0;">{ipo_analysis.get('lot_size','N/A')}</span></div>
+<div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Min Amount</span><br><span style="font-size:0.72rem;color:#dde5f0;">₹{ipo_analysis.get('min_amount',0):,.0f}</span></div>
+</div>"""
+
+                    card_html = f"""<div class="terminal-card" style="border:1px solid {border_color};">
+<div class="left-bar" style="background:{rec_color};"></div>
+<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+<div style="flex:1;min-width:200px;">
+<div style="font-size:1.05rem;font-weight:800;color:#f0f6ff;">{ipo_analysis.get('name','')}</div>
+<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+<span class="pill">{ipo_analysis.get('sector','N/A')}</span>
+<span class="pill">{ipo_analysis.get('status','N/A')}</span>
+<span class="pill">{ipo_analysis.get('price_band','N/A')}</span>
+{gmp_badge}
+{sent_badge}
+{peer_badge}
+</div>
+</div>
+<div style="text-align:right;">
+<div style="font-size:0.85rem;font-weight:700;color:{rec_color};background:{rec_bg};border:1px solid {border_color};border-radius:20px;padding:4px 16px;display:inline-block;">{rec}</div>
+<div style="font-size:0.68rem;color:#5a7a9a;margin-top:4px;">Score: {ipo_analysis.get('overall_score',0)}/100</div>
+</div>
+</div>
+<div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;border-top:1px solid #0d1f35;padding-top:9px;">
+<div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Listing Gain</span><br><span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('listing_gain_probability','N/A')} ({ipo_analysis.get('listing_gain_score',0)})</span></div>
+<div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Growth</span><br><span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('growth_score',0)}/100</span></div>
+<div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Financials</span><br><span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('financial_score',0)}/100</span></div>
+<div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Valuation</span><br><span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('valuation_score',0)}/100</span></div>
+</div>
+<div style="margin-top:6px;font-size:0.72rem;color:#8aaccc;line-height:1.6;">{ipo_analysis.get('recommendation_reason','')}</div>
+{open_date_html}
+</div>"""
+                    st.markdown(card_html, unsafe_allow_html=True)
 
                     # Expandable detailed profile & financials
                     with st.expander(f"🔍 Deep Analysis & Financial Profile for {ipo_analysis.get('name')}"):
