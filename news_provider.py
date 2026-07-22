@@ -147,59 +147,58 @@ HISTORICAL_NEWS_CATALYSTS = [
 # Broker picks extraction
 # ---------------------------------------------------------------------------
 BROKER_KEYWORDS = [
-    "Motilal Oswal", "Kotak", "ICICI", "Morgan Stanley", "Jefferies",
-    "Goldman", "Goldman Sachs", "CLSA", "Credit Suisse", "Nomura",
-    "Axis", "Edelweiss", "HSBC", "UBS", "Macquarie", "JM Financial",
-    "HDFC Securities", "Nuvama", "Elara", "IDBI Capital", "SBI Securities",
-    "Angel One", "Sharekhan", "Geojit", "BOB Capital", "Centrum",
-    "Prabhudas Lilladher", "Anand Rathi", "SMC Global", "IndusInd",
-    "BNP Paribas", "Deutsche Bank", "Citigroup", "JPMorgan",
+    "Motilal Oswal", "Kotak Securities", "Kotak", "ICICI Direct", "ICICI Securities", "ICICI",
+    "Morgan Stanley", "Jefferies", "Goldman Sachs", "Goldman", "CLSA", "Credit Suisse",
+    "Nomura", "Axis Capital", "Axis Securities", "Axis", "Edelweiss", "HSBC", "UBS",
+    "Macquarie", "JM Financial", "HDFC Securities", "HDFC", "Nuvama", "Elara Capital",
+    "Elara", "IDBI Capital", "SBI Securities", "Angel One", "Sharekhan", "Geojit",
+    "BOB Capital", "Centrum", "Prabhudas Lilladher", "Anand Rathi", "SMC Global",
+    "IndusInd", "BNP Paribas", "Deutsche Bank", "Citigroup", "JPMorgan", "Emkay",
+    "Incred", "Systematix", "Monarch Networth", "Antique", "Choice Broking"
 ]
 
 
 def _parse_broker_from_title(title: str) -> str:
-    """Try to guess the broker name from a headline using known keywords."""
+    """Try to guess the broker name from a headline using known broker keywords."""
     t = title or ""
     for b in BROKER_KEYWORDS:
-        if b.upper() in t.upper():
+        if re.search(r'\b' + re.escape(b) + r'\b', t, re.IGNORECASE):
             return b
-    # fallback: look for 2-capitalized word sequences (e.g. 'Motilal Oswal')
-    m = re.search(r"\b([A-Z][a-z]+\s+[A-Z][a-z]+)\b", t)
+    # Pattern match: E.g., 'XYZ Securities', 'ABC Broking', 'DEF Capital'
+    m = re.search(r"\b([A-Z][a-zA-Z0-9]+\s+(?:Securities|Capital|Broking|Brokerage|Financial|Wealth|Equities|Direct))\b", t)
     if m:
         return m.group(1)
-    return "Unknown"
+    return "Institutional Brokerage"
 
 
 def _extract_target_price(title: str):
     """Extract a numeric target price from headline if present."""
-    m = re.search(r"(target(?: price)?[:\s]*₹?\s*)([0-9,]+(?:\.[0-9]+)?)", title, re.IGNORECASE)
+    m = re.search(r"(?:target(?: price)?|tp)[:\s]*₹?\s*([0-9,]+(?:\.[0-9]+)?)", title, re.IGNORECASE)
     if m:
         try:
-            return float(m.group(2).replace(',', ''))
+            return float(m.group(1).replace(',', ''))
         except Exception:
             return None
-    # common pattern: 'raises target to 500' or 'cuts target to 250'
-    m2 = re.search(r"to\s+₹?\s*([0-9,]+(?:\.[0-9]+)?)", title, re.IGNORECASE)
+    # Common pattern: 'raises target to 500' or 'cuts target to 250' or 'target Rs 1200'
+    m2 = re.search(r"(?:to|rs\.?|inr)\s+₹?\s*([0-9,]+(?:\.[0-9]+)?)", title, re.IGNORECASE)
     if m2:
         try:
-            return float(m2.group(1).replace(',', ''))
+            val = float(m2.group(1).replace(',', ''))
+            if val > 10:  # avoid matching small numbers like dates
+                return val
         except Exception:
             return None
     return None
 
 
 def fetch_broker_calls(all_symbols: list = None, max_items: int = 40) -> list:
-    """Fetch broker upgrade/downgrade/target calls from Google News RSS and return structured picks.
-
-    This is intentionally lightweight: it queries Google News RSS for broker-related keywords
-    and attempts to extract ticker matches, broker name and target price where available.
-    """
+    """Fetch broker upgrade/downgrade/target calls from Google News RSS and return structured picks."""
     if not _HAS_REQUESTS:
         return []
 
     queries = [
-        'broker OR brokerage OR "target price" OR upgrade OR downgrade OR "raises target"',
-        '"reiterates" OR "initiates coverage" OR "recommends" OR "cuts target" broker',
+        '("buy call" OR "buy target" OR "target price" OR "initiates coverage" OR "raises target" OR "brokerage recommendation") (stock OR shares OR nse OR bse)',
+        '("recommends buy" OR "cuts target" OR "target Rs" OR "target INR" OR "broker call") (stock OR shares)'
     ]
 
     items = []
@@ -223,12 +222,20 @@ def fetch_broker_calls(all_symbols: list = None, max_items: int = 40) -> list:
         broker = _parse_broker_from_title(title)
         ticker = extract_ticker_from_headline(title, all_symbols or [])
         target = _extract_target_price(title)
-        action = 'Upgrade' if re.search(r'upgrade|raises|reiterat|recommend', title, re.IGNORECASE) else (
-            'Downgrade' if re.search(r'downgrade|cuts|slashes|cuts target', title, re.IGNORECASE) else 'Mention')
+        
+        # Determine recommendation action
+        t_lower = title.lower()
+        if any(w in t_lower for w in ['buy', 'upgrade', 'raises', 'bullish', 'outperform']):
+            action = 'BUY / UPGRADE'
+        elif any(w in t_lower for w in ['sell', 'downgrade', 'cuts', 'bearish', 'underperform']):
+            action = 'SELL / DOWNGRADE'
+        elif 'target' in t_lower:
+            action = 'TARGET REVISION'
+        else:
+            action = 'COVERAGE'
 
         pub = it.get('pubDate') or it.get('pub_date') or it.get('published_at') or ''
         dt = pub
-        # Normalize date to ISO date string
         try:
             parsed = _parse_news_datetime(pub)
             dt = parsed.isoformat()
@@ -237,17 +244,17 @@ def fetch_broker_calls(all_symbols: list = None, max_items: int = 40) -> list:
             date_only = (pub or '')[:10]
 
         results.append({
-            'Ticker': ticker or '',
+            'Ticker': ticker or 'GENERAL',
             'Headline': title,
             'Broker': broker,
             'Action': action,
-            'Target': target,
+            'Target': target if target else 'N/A',
+            'Link': it.get('link', ''),
             'DateTime': dt,
             'Date': date_only,
             'Source': it.get('source', 'Google News')
         })
 
-    # sort newest-first
     return sort_news_items(results)
 
 

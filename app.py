@@ -2094,6 +2094,40 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
         else:
             st.markdown('<div class="infobox">No historical news trades in log. Run Analysis to load news backtest.</div>', unsafe_allow_html=True)
 
+        # ── Live Broker Recommendations & Target Price Calls ──
+        st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+        _sec_header("🏦", "Live Institutional Broker Recommendations & Target Price Revisions")
+        brokers_data = st.session_state.get("brokers_picks")
+        if isinstance(brokers_data, pd.DataFrame) and not brokers_data.empty:
+            b_list = brokers_data.to_dict("records")
+        elif isinstance(brokers_data, list) and len(brokers_data) > 0:
+            b_list = brokers_data
+        else:
+            b_list = p_cache.get_brokers_cache()
+            
+        if b_list and isinstance(b_list, list):
+            b_df = pd.DataFrame(b_list)
+            desired_broker_cols = ["Ticker", "Broker", "Action", "Target", "Headline", "Date"]
+            disp_b_df = pd.DataFrame()
+            for c in desired_broker_cols:
+                disp_b_df[c] = b_df[c] if c in b_df.columns else ""
+            
+            st.dataframe(
+                disp_b_df,
+                column_config={
+                    "Ticker": st.column_config.TextColumn("Stock"),
+                    "Broker": st.column_config.TextColumn("Brokerage Firm"),
+                    "Action": st.column_config.TextColumn("Call / Action"),
+                    "Target": st.column_config.TextColumn("Target Price"),
+                    "Headline": st.column_config.TextColumn("News Headline", width="large"),
+                    "Date": st.column_config.TextColumn("Date"),
+                },
+                hide_index=True,
+                width='stretch',
+            )
+        else:
+            st.markdown('<div class="infobox">No broker calls loaded yet. Click "Load Full News" to scrape live brokerage upgrades & targets.</div>', unsafe_allow_html=True)
+
     # ══════════════════════════════════════════════════════════════
     # TAB 3 — Backtest tracker
     # ══════════════════════════════════════════════════════════════
