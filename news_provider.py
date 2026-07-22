@@ -8,6 +8,7 @@ Fallback: Curated recent catalysts when live scraping fails.
 Backtest: Historical catalyst list evaluated against actual price outcomes.
 """
 from typing import List, Dict
+import re
 import pandas as pd
 import datetime
 import time
@@ -642,9 +643,6 @@ def scrape_live_all_nse_news_from_items(scraped_items: list, all_symbols: list) 
 
 
 
-
-
-import re
 
 def extract_ticker_from_headline(headline: str, all_symbols: list) -> str | None:
     """Matches a headline string against all known NSE symbols and custom mappings."""

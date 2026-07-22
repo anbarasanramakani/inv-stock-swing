@@ -218,7 +218,7 @@ def run_3month_optimization(df_raw: pd.DataFrame, hold_days: int = 5, backtest_d
                 else:
                     status = "Time Exit"
                     
-            pnl_pct = ((exit_price - entry_price) / entry_price) * 100
+            pnl_pct = ((exit_price - entry_price) / entry_price * 100) if entry_price != 0 else 0.0
             trigger_date = df.index[idx]
             exit_date = df.index[exit_idx]
             

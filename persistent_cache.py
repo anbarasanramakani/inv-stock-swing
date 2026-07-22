@@ -203,7 +203,11 @@ def st_cache(ttl_seconds: int = 86400 * 30):  # Default: 30 days
     """
     def decorator(func):
         if _HAS_STREAMLIT:
-            return st.cache_data(ttl=ttl_seconds, show_spinner=False, persist="disk")(func)
+            try:
+                return st.cache_data(ttl=ttl_seconds, show_spinner=False, persist="disk")(func)
+            except TypeError:
+                # persist="disk" not supported in older Streamlit versions (<1.36)
+                return st.cache_data(ttl=ttl_seconds, show_spinner=False)(func)
         return func
     return decorator
 

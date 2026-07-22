@@ -506,8 +506,6 @@ import ipo_provider as ipo
 # Multi-tier persistent cache (survives Streamlit Cloud restarts/deploys)
 try:
     import persistent_cache as pcache
-    # Migrate legacy cache files into persistent storage on first run
-    pcache.migrate_legacy_caches()
     _HAS_PCACHE = True
 except ImportError:
     pcache = None
@@ -608,12 +606,15 @@ if "_analysis_worker_state" not in st.session_state:
     st.session_state["_analysis_worker_state"] = {}
 
 # ─── Startup: load persistent caches via multi-tier persistent_cache engine ───
-import persistent_cache as p_cache
-p_cache.migrate_legacy_caches()
+# Use the pcache alias (imported above); migrate legacy caches once per cold start
+if pcache is not None:
+    pcache.migrate_legacy_caches()
+# Alias for readability inside the startup block
+p_cache = pcache
 
 if st.session_state.get("initial_news_loaded") is not True:
     st.session_state.initial_news_loaded = True
-    
+
     try:
         # Load persistent news cache (survives app restarts & re-deploys)
         cached_news = p_cache.get_news_cache()
@@ -624,7 +625,7 @@ if st.session_state.get("initial_news_loaded") is not True:
                 all_symbols=tick_helper.get_all_nse_tickers(),
                 existing_picks=[]
             )
-            st.session_state.news_picks = pd.DataFrame(preview_items)
+            st.session_state.news_picks = pd.DataFrame(preview_items or [])
             if preview_items:
                 p_cache.set_news_cache(preview_items)
 
@@ -641,13 +642,16 @@ if st.session_state.get("initial_news_loaded") is not True:
                 picks = latest_run.get("picks", [])
                 if picks:
                     all_picks_df = pd.DataFrame(picks)
-                    
+                    # Guard: Source column may not exist in older cached data
+                    if "Source" not in all_picks_df.columns:
+                        all_picks_df["Source"] = "swing"
+
                     swing = all_picks_df[all_picks_df["Source"] == "swing"]
                     st.session_state.screener_results = swing if not swing.empty else pd.DataFrame()
-                    
+
                     med = all_picks_df[all_picks_df["Source"] == "medium"]
                     st.session_state.medium_term_picks = med if not med.empty else pd.DataFrame()
-                    
+
                     intra_p = all_picks_df[all_picks_df["Source"] == "intraday"]
                     st.session_state.intraday_picks = intra_p if not intra_p.empty else pd.DataFrame()
 
@@ -1155,14 +1159,14 @@ def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, sta
                     res = scr.run_screener_on_data(ticker, df, strategy)
                     if res and float(res.get('Vol_Ratio', 0)) >= min_vol_ratio:
                         matching.append(res)
-                    past_sigs.extend(scr.track_past_signals(ticker, df, strategy))
+                    past_sigs.extend(scr.track_past_signals(ticker, df, strategy) or [])
                     mt = scr.run_medium_term_screener(ticker, df)
                     if mt:
                         medium_term.append(mt)
                     intra_res = intra.run_intraday_screener(ticker, df)
                     if intra_res:
                         intraday_picks.extend(intra_res)
-                    intraday_backtest.extend(intra.backtest_intraday_10days(ticker, df))
+                    intraday_backtest.extend(intra.backtest_intraday_10days(ticker, df) or [])
                 except Exception:
                     continue
 
@@ -1199,8 +1203,6 @@ def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, sta
             state["last_updated"] = time.time()
 
         all_nse_symbols = tick_helper.get_all_nse_tickers()
-        import json
-        import os
         existing_news_list = []
         if os.path.exists("news_cache.json"):
             try:
@@ -1864,6 +1866,12 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
             unsafe_allow_html=True,
         )
 
+        # Split results into tier buckets (always defined to avoid NameError)
+        conv_95_df = pd.DataFrame()
+        opt_df     = pd.DataFrame()
+        hi_df      = pd.DataFrame()
+        tech_df    = pd.DataFrame()
+
         if results_df.empty:
             st.warning("No stocks matched. Try a wider universe or lower filters.")
         else:
@@ -1884,27 +1892,23 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
 
         # — 🎯 Tier-0 95%+ Win-Rate Conviction Pullbacks —
         _sec_header("🎯", "Tier-0 — 95%+ Win-Rate Conviction Pullbacks",
-                    count=len(conv_95_df) if not results_df.empty else 0, badge="95%+ Success Rate Strategy")
-        if not results_df.empty:
-            _render_cards(conv_95_df, ltp_cache)
+                    count=len(conv_95_df), badge="95%+ Success Rate Strategy")
+        _render_cards(conv_95_df, ltp_cache)
 
         # — A. Optimised Focus Group —
         _sec_header("🏆", "Optimized Focus Group — Nifty 50 Pullbacks & Reversals",
-                    count=len(opt_df) if not results_df.empty else 0, badge="78%+ Win Rate")
-        if not results_df.empty:
-            _render_cards(opt_df, ltp_cache)
+                    count=len(opt_df), badge="78%+ Win Rate")
+        _render_cards(opt_df, ltp_cache)
 
         # — B. Tier-1 Institutional —
         _sec_header("💎", "Tier-1 — Institutional + Technical Confluence",
-                    count=len(hi_df) if not results_df.empty else 0, badge="FII / MF Backed")
-        if not results_df.empty:
-            _render_cards(hi_df, ltp_cache)
+                    count=len(hi_df), badge="FII / MF Backed")
+        _render_cards(hi_df, ltp_cache)
 
         # — C. Tier-2 Technical —
         _sec_header("📈", "Tier-2 — Technical Momentum Setups",
-                    count=len(tech_df) if not results_df.empty else 0)
-        if not results_df.empty:
-            _render_cards(tech_df, ltp_cache)
+                    count=len(tech_df))
+        _render_cards(tech_df, ltp_cache)
 
 
 
@@ -2202,14 +2206,14 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
     # TAB 5 — IPO Watch & Analysis
     # ══════════════════════════════════════════════════════════════
     with tab4:
-        st.markdown("""
-        <div class="infobox">
-          <b>💰 IPO Watch — In Progress, Upcoming & Recently Listed</b><br>
-          Comprehensive IPO analysis with <b>multi-source data</b> (Chittorgarh, Moneycontrol, Trendlyne, NSE API).<br>
-          Includes: Grey Market Premium (GMP) tracking · News/Social Media sentiment · Peer valuation comparison · 
-          Company website & draft paper (SEBI RHP) search · Financial scoring · Final recommendation.
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+'<div class="infobox">'
+'<b>💰 IPO Watch — In Progress, Upcoming &amp; Recently Listed</b><br>'
+'Comprehensive IPO analysis with <b>multi-source data</b> (Chittorgarh, Moneycontrol, Trendlyne, NSE API).<br>'
+'Includes: Grey Market Premium (GMP) tracking &middot; News/Social Media sentiment &middot; Peer valuation comparison &middot; '
+'Company website &amp; draft paper (SEBI RHP) search &middot; Financial scoring &middot; Final recommendation.'
+'</div>',
+unsafe_allow_html=True)
         
         col1, col2 = st.columns([1, 1])
         with col1:

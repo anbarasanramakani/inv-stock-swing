@@ -12,23 +12,23 @@ import os
 import time
 import hashlib
 from typing import Optional, List, Dict, Any
+from urllib.parse import quote as url_quote
 from bs4 import BeautifulSoup
 import pandas as pd
 import numpy as np
+
+try:
+    import persistent_cache as p_cache
+    _HAS_P_CACHE = True
+except ImportError:
+    p_cache = None
+    _HAS_P_CACHE = False
 
 try:
     import streamlit as st
     _HAS_STREAMLIT = True
 except ImportError:
     _HAS_STREAMLIT = False
-
-
-def _cache_data_decorator(ttl=3600):
-    def decorator(fn):
-        if _HAS_STREAMLIT:
-            return st.cache_data(ttl=ttl)(fn)
-        return fn
-    return decorator
 
 
 # ---------------------------------------------------------------------------
@@ -323,7 +323,7 @@ def fetch_google_news_sentiment(company_name: str) -> Dict[str, Any]:
     Executes a lexicon mapping sentiment ruleset to output a score from -1.0 to 1.0.
     """
     query = f"{company_name} IPO"
-    rss_url = f"https://news.google.com/rss/search?q={requests.utils.quote(query)}&hl=en-IN&gl=IN&ceid=IN:en"
+    rss_url = f"https://news.google.com/rss/search?q={url_quote(query)}&hl=en-IN&gl=IN&ceid=IN:en"
     headlines = []
     try:
         r = requests.get(rss_url, headers=_HEADERS, timeout=10)
@@ -588,12 +588,11 @@ def fetch_ipo_list() -> list:
     return ipo_list
 
 
-import persistent_cache as p_cache
-
 
 def save_ipo_cache(ipo_list: list):
     """Save IPO list to persistent cache multi-tier engine."""
-    p_cache.set_ipo_cache(ipo_list)
+    if p_cache is not None:
+        p_cache.set_ipo_cache(ipo_list)
     if _IPO_CACHE_PATH:
         try:
             with open(_IPO_CACHE_PATH, "w", encoding="utf-8") as f:

@@ -103,14 +103,17 @@ def get_latest_fii_sentiment() -> tuple[Optional[float], Optional[str]]:
     # 1. Try NSDL FPI investment activity (primary source)
     try:
         import concurrent.futures
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(fetch_nsdl_fpi_latest_investment_activity)
-        df = future.result(timeout=5)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(fetch_nsdl_fpi_latest_investment_activity)
+            try:
+                df = future.result(timeout=5)
+            except concurrent.futures.TimeoutError:
+                df = None
         if df is not None and not df.empty and 'ASSET_CLASS' in df.columns:
             equity = df[df['ASSET_CLASS'].str.upper() == 'EQUITY']
-            if not equity.empty:
+            if not equity.empty and 'NET_INVESTMENT_RS_CR' in equity.columns:
                 net_flow = equity['NET_INVESTMENT_RS_CR'].sum()
-                report_date = equity['REPORT_DATE'].iloc[0]
+                report_date = equity['REPORT_DATE'].iloc[0] if 'REPORT_DATE' in equity.columns else ''
                 return round(net_flow, 2), str(report_date)
     except Exception as e:
         print(f"[FII Info] NSDL fetch failed: {e}. Trying alternative...")
@@ -151,14 +154,14 @@ def get_recent_bulk_deals() -> Optional[pd.DataFrame]:
     
     try:
         import concurrent.futures
-        # Use ThreadPoolExecutor without a context manager to avoid blocking on shutdown
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(bulk_deal_data, period='1W')
-        try:
-            df = future.result(timeout=8)
-        except concurrent.futures.TimeoutError:
-            print("[FII/Bulk] NSE bulk_deal_data timed out after 8s.")
-            return None
+        # Use ThreadPoolExecutor as a context manager to prevent thread leaks
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(bulk_deal_data, period='1W')
+            try:
+                df = future.result(timeout=8)
+            except concurrent.futures.TimeoutError:
+                print("[FII/Bulk] NSE bulk_deal_data timed out after 8s.")
+                return None
             
         if df is not None and not df.empty:
             df = df.copy()

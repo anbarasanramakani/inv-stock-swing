@@ -181,6 +181,7 @@ def get_nifty1000_tickers() -> list[str]:
 
     nifty500_syms = [t.replace(".NS", "") for t in get_nifty500_tickers()]
     unique_symbols = list(dict.fromkeys(nifty500_syms))
+    unique_set = set(unique_symbols)  # O(1) membership check
 
     try:
         print("Downloading EQUITY_L to build Nifty 1000...")
@@ -191,8 +192,9 @@ def get_nifty1000_tickers() -> list[str]:
                 .dropna().astype(str).str.strip().tolist()
             )
             for sym in eq_syms:
-                if sym and sym not in unique_symbols:
+                if sym and sym not in unique_set:
                     unique_symbols.append(sym)
+                    unique_set.add(sym)
                 if len(unique_symbols) >= 1000:
                     break
     except Exception as e:
@@ -218,6 +220,7 @@ def get_all_nse_tickers() -> list[str]:
             print(f"Error reading all NSE cache: {e}")
 
     unique_symbols = [t.replace(".NS", "") for t in get_nifty1000_tickers()]
+    unique_set = set(unique_symbols)  # O(1) membership check
 
     try:
         print("Downloading EQUITY_L to fetch all NSE stocks...")
@@ -228,8 +231,9 @@ def get_all_nse_tickers() -> list[str]:
                 .dropna().astype(str).str.strip().tolist()
             )
             for sym in eq_syms:
-                if sym and sym not in unique_symbols:
+                if sym and sym not in unique_set:
                     unique_symbols.append(sym)
+                    unique_set.add(sym)
     except Exception as e:
         print(f"Error downloading all NSE symbols: {e}")
 
