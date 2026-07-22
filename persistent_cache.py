@@ -82,50 +82,85 @@ def _save_cache_to_disk(data: dict):
         pass  # Fail silently on read-only filesystems (Streamlit Cloud)
 
 
+# ---------------------------------------------------------------------------
+# Legacy file mapping for seed / cold-start persistence
+# ---------------------------------------------------------------------------
+_LEGACY_MAP = {
+    "ipo_list": "ipo_cache.json",
+    "news_list": "news_cache.json",
+    "analysis_history": "analysis_history_cache.json",
+    "brokers_list": "brokers_cache.json",
+}
+
 def cache_get(key: str, default: Any = None) -> Any:
     """
-    Retrieve a value from the multi-tier cache.
+    Retrieve a value from the multi-tier persistent cache.
     
-    Tier 1: st.cache_data (Streamlit's persistent cache - survives reruns)
-    Tier 2: st.session_state (per-session)
-    Tier 3: On-disk JSON file
+    Tier 1: st.session_state (fastest, per-session)
+    Tier 2: On-disk unified cache (.cache/unified_cache.json)
+    Tier 3: Tracked seed JSON file in repository root (guaranteed cold-start fallback)
     """
-    # Tier 1: st.cache_data (wraps the function; use via cache_get_data helper)
-    # We handle this by calling the caching function
-    
-    # Tier 2: session state (fastest, survives reruns within session)
+    # Tier 1: session state
     if _HAS_STREAMLIT:
         ss_key = f"_cache_{key}"
         if ss_key in st.session_state:
-            return st.session_state[ss_key]
-    
-    # Tier 3: disk cache
+            val = st.session_state[ss_key]
+            if val is not None and val != [] and val != {}:
+                return val
+
+    # Tier 2: disk unified cache
     disk_cache = _get_cache_from_disk()
     if key in disk_cache:
         value = disk_cache[key]
-        # Promote to session state for faster access next time
-        if _HAS_STREAMLIT:
-            st.session_state[f"_cache_{key}"] = value
-        return value
-    
+        if value is not None and value != [] and value != {}:
+            if _HAS_STREAMLIT:
+                st.session_state[f"_cache_{key}"] = value
+            return value
+
+    # Tier 3: Tracked seed JSON file fallback (crucial for Streamlit Cloud restart)
+    if key in _LEGACY_MAP:
+        legacy_path = os.path.join(_DIR, _LEGACY_MAP[key])
+        if os.path.exists(legacy_path):
+            try:
+                with open(legacy_path, "r", encoding="utf-8") as f:
+                    seed_val = json.load(f)
+                if seed_val:
+                    if _HAS_STREAMLIT:
+                        st.session_state[f"_cache_{key}"] = seed_val
+                    # Promote to disk cache
+                    disk_cache[key] = seed_val
+                    _save_cache_to_disk(disk_cache)
+                    return seed_val
+            except Exception:
+                pass
+
     return default
 
 
 def cache_set(key: str, value: Any):
     """
-    Store a value in all available cache tiers.
+    Store a value in all available cache tiers (session state, unified cache, and root JSON).
     """
-    # Tier 2: session state
+    # Tier 1: session state
     if _HAS_STREAMLIT:
         st.session_state[f"_cache_{key}"] = value
-    
-    # Tier 3: disk cache (best-effort)
+
+    # Tier 2: disk unified cache
     try:
         disk_cache = _get_cache_from_disk()
         disk_cache[key] = value
         _save_cache_to_disk(disk_cache)
     except Exception:
         pass
+
+    # Tier 3: root legacy file sync (best effort)
+    if key in _LEGACY_MAP:
+        legacy_path = os.path.join(_DIR, _LEGACY_MAP[key])
+        try:
+            with open(legacy_path, "w", encoding="utf-8") as f:
+                json.dump(value, f, indent=2, ensure_ascii=False, default=str)
+        except Exception:
+            pass
 
 
 def cache_clear(key: Optional[str] = None):
@@ -138,11 +173,10 @@ def cache_clear(key: Optional[str] = None):
             if ss_key in st.session_state:
                 del st.session_state[ss_key]
         else:
-            # Clear all cache keys from session state
             keys_to_delete = [k for k in st.session_state.keys() if k.startswith("_cache_")]
             for k in keys_to_delete:
                 del st.session_state[k]
-    
+
     if key:
         try:
             disk_cache = _get_cache_from_disk()
@@ -160,21 +194,16 @@ def cache_clear(key: Optional[str] = None):
 
 
 # ---------------------------------------------------------------------------
-# Streamlit cache_data wrapper (Tier 1 - survives reruns across sessions)
+# Streamlit cache_data wrapper with disk persistence
 # ---------------------------------------------------------------------------
-def st_cache(ttl_seconds: int = 86400 * 7):  # Default: 7 days
+def st_cache(ttl_seconds: int = 86400 * 30):  # Default: 30 days
     """
-    Decorator that wraps a function with Streamlit's cache_data.
-    Falls back to session state + disk cache if streamlit is unavailable.
-    
-    Usage:
-        @st_cache(ttl=3600)
-        def get_my_data():
-            return expensive_computation()
+    Decorator that wraps a function with Streamlit's cache_data (persisted to disk).
+    Survives app reruns and session restarts.
     """
     def decorator(func):
         if _HAS_STREAMLIT:
-            return st.cache_data(ttl=ttl_seconds)(func)
+            return st.cache_data(ttl=ttl_seconds, show_spinner=False, persist="disk")(func)
         return func
     return decorator
 
@@ -233,23 +262,12 @@ def set_brokers_cache(brokers_list: list):
     cache_set("brokers_list", brokers_list)
 
 
-# ---------------------------------------------------------------------------
-# Migration helper: move existing legacy cache files into unified cache
-# ---------------------------------------------------------------------------
 def migrate_legacy_caches():
     """
     One-time migration of all legacy cache files into the unified cache.
     Call this once at app startup.
     """
-    legacy_caches = {
-        "ipo_list": "ipo_cache.json",
-        "news_list": "news_cache.json",
-        "analysis_history": "analysis_history_cache.json",
-        "brokers_list": "brokers_cache.json",
-    }
-    
-    for cache_key, legacy_file in legacy_caches.items():
-        # Only migrate if we don't already have this key in our cache
+    for cache_key, legacy_file in _LEGACY_MAP.items():
         if cache_get(cache_key) is None or cache_get(cache_key) == [] or cache_get(cache_key) == {}:
             legacy_path = os.path.join(_DIR, legacy_file)
             if os.path.exists(legacy_path):

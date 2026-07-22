@@ -588,8 +588,12 @@ def fetch_ipo_list() -> list:
     return ipo_list
 
 
+import persistent_cache as p_cache
+
+
 def save_ipo_cache(ipo_list: list):
-    """Save IPO list to local JSON cache."""
+    """Save IPO list to persistent cache multi-tier engine."""
+    p_cache.set_ipo_cache(ipo_list)
     if _IPO_CACHE_PATH:
         try:
             with open(_IPO_CACHE_PATH, "w", encoding="utf-8") as f:

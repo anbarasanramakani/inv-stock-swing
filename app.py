@@ -607,53 +607,55 @@ if st.session_state.brokers_picks is None:
 if "_analysis_worker_state" not in st.session_state:
     st.session_state["_analysis_worker_state"] = {}
 
-# ─── Startup: load a fast news preview first, then refresh in the background ───
+# ─── Startup: load persistent caches via multi-tier persistent_cache engine ───
+import persistent_cache as p_cache
+p_cache.migrate_legacy_caches()
+
 if st.session_state.get("initial_news_loaded") is not True:
     st.session_state.initial_news_loaded = True
-    st.session_state.news_picks = pd.DataFrame()
-
+    
     try:
-        if os.path.exists("news_cache.json"):
-            with open("news_cache.json", "r", encoding="utf-8") as _f:
-                cached_items = json.load(_f)
-            today_str = datetime.date.today().isoformat()
-            today_items = [x for x in cached_items if x.get("Date", "") >= today_str]
-            if today_items:
-                st.session_state.news_picks = pd.DataFrame(today_items)
-
-        if st.session_state.news_picks.empty:
+        # Load persistent news cache (survives app restarts & re-deploys)
+        cached_news = p_cache.get_news_cache()
+        if cached_news and isinstance(cached_news, list):
+            st.session_state.news_picks = pd.DataFrame(cached_news)
+        else:
             preview_items = news_helper.get_news_preview(
                 all_symbols=tick_helper.get_all_nse_tickers(),
                 existing_picks=[]
             )
             st.session_state.news_picks = pd.DataFrame(preview_items)
+            if preview_items:
+                p_cache.set_news_cache(preview_items)
 
-        # ADD: Load latest full analysis run globally
+        # Load persistent broker recommendations
+        cached_brokers = p_cache.get_brokers_cache()
+        if cached_brokers and isinstance(cached_brokers, list):
+            st.session_state.brokers_picks = pd.DataFrame(cached_brokers)
+
+        # Load latest full analysis run from persistent history
         try:
-            history_cache_path = "analysis_history_cache.json"
-            if os.path.exists(history_cache_path):
-                with open(history_cache_path, "r", encoding="utf-8") as _hf:
-                    hist_data = json.load(_hf)
-                if hist_data.get("runs") and len(hist_data["runs"]) > 0:
-                    latest_run = hist_data["runs"][0]
-                    picks = latest_run.get("picks", [])
-                    if picks:
-                        all_picks_df = pd.DataFrame(picks)
-                        
-                        swing = all_picks_df[all_picks_df["Source"] == "swing"]
-                        st.session_state.screener_results = swing if not swing.empty else pd.DataFrame()
-                        
-                        med = all_picks_df[all_picks_df["Source"] == "medium"]
-                        st.session_state.medium_term_picks = med if not med.empty else pd.DataFrame()
-                        
-                        intra_p = all_picks_df[all_picks_df["Source"] == "intraday"]
-                        st.session_state.intraday_picks = intra_p if not intra_p.empty else pd.DataFrame()
+            hist_data = p_cache.get_analysis_history()
+            if hist_data.get("runs") and len(hist_data["runs"]) > 0:
+                latest_run = hist_data["runs"][0]
+                picks = latest_run.get("picks", [])
+                if picks:
+                    all_picks_df = pd.DataFrame(picks)
+                    
+                    swing = all_picks_df[all_picks_df["Source"] == "swing"]
+                    st.session_state.screener_results = swing if not swing.empty else pd.DataFrame()
+                    
+                    med = all_picks_df[all_picks_df["Source"] == "medium"]
+                    st.session_state.medium_term_picks = med if not med.empty else pd.DataFrame()
+                    
+                    intra_p = all_picks_df[all_picks_df["Source"] == "intraday"]
+                    st.session_state.intraday_picks = intra_p if not intra_p.empty else pd.DataFrame()
 
-                        st.session_state.screened_universe = latest_run.get("universe", "Nifty 1000")
-                        st.session_state.screened_strategy = latest_run.get("strategy", "All Strategies")
-                        st.session_state.last_run_time = "Global Cache (Loaded)"
-                        st.session_state.last_sync_time = "Global Cache (Loaded)"
-                        st.session_state.last_sync_timestamp = time.time()
+                    st.session_state.screened_universe = latest_run.get("universe", "Nifty 1000")
+                    st.session_state.screened_strategy = latest_run.get("strategy", "All Strategies")
+                    st.session_state.last_run_time = "Global Cache (Loaded)"
+                    st.session_state.last_sync_time = "Global Cache (Loaded)"
+                    st.session_state.last_sync_timestamp = time.time()
         except Exception as e:
             print(f"Error loading global cache: {e}")
 
@@ -912,6 +914,10 @@ def _persist_news_cache(new_items: list, cache_file: str = "news_cache.json", pr
             pass
         with open(cache_path, "w", encoding="utf-8") as _f:
             json.dump(merged, _f, indent=2, ensure_ascii=False)
+        if cache_file == "news_cache.json":
+            p_cache.set_news_cache(merged)
+        elif cache_file == "brokers_cache.json":
+            p_cache.set_brokers_cache(merged)
     except Exception as _ce:
         print(f"Error persisting {cache_file}: {_ce}")
 

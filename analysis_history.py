@@ -80,25 +80,34 @@ def _get_default_cache() -> dict:
     }
 
 
+import persistent_cache as p_cache
+
+
 def load_history_cache() -> dict:
-    """Load the analysis history cache from disk."""
-    if os.path.exists(HISTORY_CACHE_FILE):
-        try:
-            with open(HISTORY_CACHE_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            # Ensure all keys exist
-            default = _get_default_cache()
-            for k, v in default.items():
-                if k not in data:
-                    data[k] = v
-            return data
-        except Exception as e:
-            print(f"Error loading history cache: {e}")
-    return _get_default_cache()
+    """Load the analysis history cache from persistent cache multi-tier engine."""
+    data = p_cache.get_analysis_history()
+    if not data or not isinstance(data, dict):
+        if os.path.exists(HISTORY_CACHE_FILE):
+            try:
+                with open(HISTORY_CACHE_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception as e:
+                print(f"Error loading history cache file: {e}")
+
+    if not data or not isinstance(data, dict):
+        data = _get_default_cache()
+
+    # Ensure all required keys exist
+    default = _get_default_cache()
+    for k, v in default.items():
+        if k not in data:
+            data[k] = v
+    return data
 
 
 def save_history_cache(cache: dict):
-    """Save the analysis history cache to disk."""
+    """Save the analysis history cache to persistent cache multi-tier engine."""
+    p_cache.set_analysis_history(cache)
     try:
         with open(HISTORY_CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(cache, f, indent=2, ensure_ascii=False, default=str)
