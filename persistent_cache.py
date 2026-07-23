@@ -151,14 +151,14 @@ def cache_get(key: str, default: Any = None) -> Any:
         if not _is_empty(val):
             return val
 
-    # ── Tier 2: GitHub API (once per key per session) ─────────────────────
+    # ── Tier 2: GitHub API (fetched once per key per session) ─────────────
     if key not in _GITHUB_LOADED and key in _GITHUB_MAP:
-        _GITHUB_LOADED.add(key)  # mark as attempted regardless of outcome
         if _HAS_GH and _gh.is_available():
             filepath = _GITHUB_MAP[key]
             try:
                 gh_val = _gh.github_read_json(filepath)
                 if not _is_empty(gh_val):
+                    _GITHUB_LOADED.add(key)  # Mark loaded only when gh_val is valid!
                     print(f"[Cache] Loaded '{key}' from GitHub ({filepath})")
                     # Populate lower tiers so subsequent reads are instant
                     if _HAS_STREAMLIT:
@@ -210,8 +210,10 @@ def cache_set(key: str, value: Any):
       1. st.session_state  -- immediate
       2. Local disk        -- immediate (works locally; wiped on Cloud restart)
       3. Seed JSON file    -- immediate local write
-      4. GitHub API        -- queued async write (flushed every 45 s)
+      4. GitHub API        -- queued & immediate async write to GitHub
     """
+    import threading
+
     # ── Tier 1: session state ──────────────────────────────────────────────
     if _HAS_STREAMLIT:
         st.session_state[f"_cache_{key}"] = value
@@ -227,12 +229,19 @@ def cache_set(key: str, value: Any):
     # ── Tier 3: seed JSON file (git-tracked) ──────────────────────────────
     _write_seed_file(key, value)
 
-    # ── Tier 4: GitHub API (async, background) ────────────────────────────
+    # ── Tier 4: GitHub API (async, non-blocking) ──────────────────────────
     if _HAS_GH and _gh.is_available() and key in _GITHUB_MAP:
         try:
             _gh.queue_write(_GITHUB_MAP[key], value)
+            # Immediate non-blocking background flush to GitHub
+            threading.Thread(
+                target=_gh.flush_now,
+                args=(_GITHUB_MAP[key], value),
+                daemon=True,
+            ).start()
         except Exception as exc:
-            print(f"[Cache] GitHub queue_write error for '{key}': {exc}")
+            print(f"[Cache] GitHub write error for '{key}': {exc}")
+
 
 
 def cache_clear(key: Optional[str] = None):

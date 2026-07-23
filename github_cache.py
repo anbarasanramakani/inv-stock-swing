@@ -58,6 +58,18 @@ _INIT_LOCK = threading.Lock()
 # Config helpers
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Diagnostics & Status
+# ---------------------------------------------------------------------------
+_LAST_ERROR: str = ""
+_LAST_STATUS: str = "Not initialized"
+
+
+def get_last_status() -> tuple[str, str]:
+    """Return (status_summary, last_error_message)."""
+    return _LAST_STATUS, _LAST_ERROR
+
+
 def _get_config():
     """Return (token, repo) from Streamlit secrets or environment variables."""
     token = None
@@ -65,8 +77,19 @@ def _get_config():
 
     if _HAS_STREAMLIT:
         try:
-            token = st.secrets.get("GITHUB_TOKEN")
-            repo  = st.secrets.get("GITHUB_REPO")
+            # Check various common secret keys
+            token = (
+                st.secrets.get("GITHUB_TOKEN") or
+                st.secrets.get("github_token") or
+                st.secrets.get("GITHUB", {}).get("TOKEN") or
+                st.secrets.get("github", {}).get("token")
+            )
+            repo = (
+                st.secrets.get("GITHUB_REPO") or
+                st.secrets.get("github_repo") or
+                st.secrets.get("GITHUB", {}).get("REPO") or
+                st.secrets.get("github", {}).get("repo")
+            )
         except Exception:
             pass
 
@@ -75,6 +98,15 @@ def _get_config():
         token = os.environ.get("GITHUB_TOKEN")
     if not repo:
         repo = os.environ.get("GITHUB_REPO", "")
+
+    # Clean token & repo strings if present
+    if token:
+        token = str(token).strip().strip("'").strip('"')
+    if repo:
+        repo = str(repo).strip().strip("'").strip('"')
+    else:
+        # Default to this repository if not specified
+        repo = "anbarasanramakani/inv-stock-swing"
 
     return token, repo
 
@@ -86,8 +118,10 @@ def is_available() -> bool:
 
 
 def _headers(token: str) -> dict:
+    # Use Bearer token authorization format (works for both ghp_ and github_pat_ tokens)
+    auth_val = f"Bearer {token}" if not token.startswith("token ") else token
     return {
-        "Authorization": f"token {token}",
+        "Authorization": auth_val,
         "Accept": "application/vnd.github.v3+json",
         "Content-Type": "application/json",
     }
@@ -100,18 +134,17 @@ def _headers(token: str) -> dict:
 def github_read_json(filepath: str) -> Optional[Any]:
     """
     Read a JSON file from the GitHub repository.
-
-    Args:
-        filepath: relative path in repo (e.g., "news_cache.json")
-
-    Returns:
-        Parsed Python object, or None on any failure.
     """
+    global _LAST_ERROR, _LAST_STATUS
+
     if not _HAS_REQUESTS:
+        _LAST_ERROR = "requests library missing"
         return None
 
     token, repo = _get_config()
     if not token or not repo:
+        _LAST_ERROR = "GITHUB_TOKEN missing in Streamlit secrets"
+        _LAST_STATUS = "Missing GITHUB_TOKEN"
         return None
 
     try:
@@ -121,19 +154,25 @@ def github_read_json(filepath: str) -> Optional[Any]:
         if resp.status_code == 200:
             payload   = resp.json()
             sha       = payload.get("sha", "")
-            # Cache SHA so subsequent writes can skip the extra GET
             _FILE_SHA[filepath] = sha
             b64_raw   = payload.get("content", "")
             raw_bytes = base64.b64decode(b64_raw.replace("\n", ""))
+            _LAST_STATUS = "Connected & Active"
+            _LAST_ERROR = ""
             return json.loads(raw_bytes.decode("utf-8"))
 
         elif resp.status_code == 404:
+            _LAST_STATUS = f"File {filepath} not found"
             return None   # File doesn't exist yet
         else:
+            _LAST_ERROR = f"Read failed HTTP {resp.status_code}: {resp.text[:100]}"
+            _LAST_STATUS = f"HTTP {resp.status_code} Error"
             print(f"[GH Cache] Read failed {filepath}: HTTP {resp.status_code}")
             return None
 
     except Exception as exc:
+        _LAST_ERROR = f"Read Exception: {exc}"
+        _LAST_STATUS = "Network Error"
         print(f"[GH Cache] Read error {filepath}: {exc}")
         return None
 
@@ -142,28 +181,24 @@ def github_write_json(filepath: str, data: Any,
                       commit_message: Optional[str] = None) -> bool:
     """
     Create or update a JSON file in the GitHub repository.
-
-    Args:
-        filepath:       relative path in repo (e.g., "news_cache.json")
-        data:           JSON-serializable Python object
-        commit_message: optional commit message (auto-generated if None)
-
-    Returns:
-        True on success, False on failure.
     """
+    global _LAST_ERROR, _LAST_STATUS
+
     if not _HAS_REQUESTS:
+        _LAST_ERROR = "requests library missing"
         return False
 
     token, repo = _get_config()
     if not token or not repo:
+        _LAST_ERROR = "GITHUB_TOKEN missing in Streamlit secrets"
+        _LAST_STATUS = "Missing GITHUB_TOKEN"
         return False
 
     try:
         url  = f"{_API_BASE}/repos/{repo}/contents/{filepath}"
         hdrs = _headers(token)
 
-        # Get current SHA (needed for updates).
-        # Use cached SHA if available, else do a fresh GET.
+        # Get current SHA (needed for updates)
         sha = _FILE_SHA.get(filepath)
         if not sha:
             get_resp = _requests.get(url, headers=hdrs, timeout=10)
@@ -186,13 +221,14 @@ def github_write_json(filepath: str, data: Any,
         put_resp = _requests.put(url, headers=hdrs, json=body, timeout=20)
 
         if put_resp.status_code in (200, 201):
-            # Update the cached SHA for the next write
             try:
                 new_sha = put_resp.json().get("content", {}).get("sha")
                 if new_sha:
                     _FILE_SHA[filepath] = new_sha
             except Exception:
                 pass
+            _LAST_STATUS = "Write Successful"
+            _LAST_ERROR = ""
             return True
 
         # 409 Conflict -> SHA mismatch -> clear cached SHA and retry once
@@ -201,10 +237,14 @@ def github_write_json(filepath: str, data: Any,
             print(f"[GH Cache] SHA conflict on {filepath}, retrying...")
             return github_write_json(filepath, data, commit_message)
 
+        _LAST_ERROR = f"Write failed HTTP {put_resp.status_code}: {put_resp.text[:100]}"
+        _LAST_STATUS = f"HTTP {put_resp.status_code} Write Error"
         print(f"[GH Cache] Write failed {filepath}: HTTP {put_resp.status_code}")
         return False
 
     except Exception as exc:
+        _LAST_ERROR = f"Write Exception: {exc}"
+        _LAST_STATUS = "Network Error"
         print(f"[GH Cache] Write error {filepath}: {exc}")
         return False
 
@@ -216,28 +256,25 @@ def github_write_json(filepath: str, data: Any,
 def _bg_flush_worker():
     """
     Background daemon thread that flushes queued writes to GitHub.
-    Runs every 45 seconds; respects per-file rate limits (5 min).
+    Runs every 10 seconds.
     """
     while True:
-        time.sleep(45)
+        time.sleep(10)
         try:
             with _QUEUE_LOCK:
+                if not _WRITE_QUEUE:
+                    continue
                 items = dict(_WRITE_QUEUE)
                 _WRITE_QUEUE.clear()
 
             requeue = {}
             for filepath, payload in items.items():
-                now  = time.time()
-                last = _LAST_WRITE.get(filepath, 0)
-                if now - last >= _WRITE_INTERVAL:
-                    ok = github_write_json(filepath, payload)
-                    if ok:
-                        _LAST_WRITE[filepath] = now
-                        print(f"[GH Cache] Persisted {filepath} to GitHub")
-                    else:
-                        requeue[filepath] = payload   # retry next cycle
+                ok = github_write_json(filepath, payload)
+                if ok:
+                    _LAST_WRITE[filepath] = time.time()
+                    print(f"[GH Cache] ✅ Persisted {filepath} to GitHub")
                 else:
-                    requeue[filepath] = payload       # too soon, defer
+                    requeue[filepath] = payload   # retry next cycle
 
             if requeue:
                 with _QUEUE_LOCK:
@@ -264,10 +301,7 @@ def _ensure_bg_writer():
 
 def queue_write(filepath: str, data: Any):
     """
-    Non-blocking: queue a write to GitHub (flushed in background every 45s).
-
-    Usage:
-        github_cache.queue_write("news_cache.json", news_list)
+    Queue a write to GitHub (flushed in background within 10s).
     """
     _ensure_bg_writer()
     with _QUEUE_LOCK:
@@ -277,6 +311,6 @@ def queue_write(filepath: str, data: Any):
 def flush_now(filepath: str, data: Any) -> bool:
     """
     Blocking: write immediately to GitHub (bypasses the queue).
-    Use when you need guaranteed persistence before app exits.
     """
     return github_write_json(filepath, data)
+

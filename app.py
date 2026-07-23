@@ -731,8 +731,10 @@ with st.sidebar:
     try:
         import github_cache as _gh_ui
         _gh_ok = _gh_ui.is_available()
+        _gh_status, _gh_err = _gh_ui.get_last_status()
     except Exception:
         _gh_ok = False
+        _gh_status, _gh_err = "Error", "Failed to import github_cache"
 
     if _gh_ok:
         st.markdown(
@@ -740,22 +742,26 @@ with st.sidebar:
             'border:1px solid rgba(63,185,80,0.2);border-radius:6px;'
             'display:flex;align-items:center;gap:8px;">'
             '<span style="width:6px;height:6px;border-radius:50%;background:#3fb950;display:inline-block;"></span>'
-            '<span style="font-size:0.62rem;color:#3fb950;font-weight:700;">GitHub Sync ACTIVE</span>'
-            '<span style="font-size:0.58rem;color:#5a7a9a;margin-left:auto;">Permanent Cache</span>'
+            '<div><span style="font-size:0.62rem;color:#3fb950;font-weight:700;">GitHub Sync ACTIVE</span><br>'
+            '<span style="font-size:0.55rem;color:#5a7a9a;">Permanent Cloud Storage</span></div>'
             '</div>',
             unsafe_allow_html=True,
         )
+        if _gh_err:
+            st.caption(f"⚠️ Cache Note: {_gh_err}")
     else:
         st.markdown(
             '<div style="margin:10px 0 0;padding:6px 10px;background:rgba(255,166,87,0.06);'
             'border:1px solid rgba(255,166,87,0.2);border-radius:6px;'
             'display:flex;align-items:center;gap:8px;">'
             '<span style="width:6px;height:6px;border-radius:50%;background:#ffa657;display:inline-block;"></span>'
-            '<span style="font-size:0.62rem;color:#ffa657;font-weight:700;">Cache: Session Only</span>'
-            '<span style="font-size:0.58rem;color:#5a7a9a;margin-left:auto;">Add GITHUB_TOKEN</span>'
+            '<div><span style="font-size:0.62rem;color:#ffa657;font-weight:700;">Cache: Session Only</span><br>'
+            '<span style="font-size:0.55rem;color:#5a7a9a;">Add GITHUB_TOKEN in Secrets</span></div>'
             '</div>',
             unsafe_allow_html=True,
         )
+        if _gh_err:
+            st.caption(f"❌ {_gh_err}")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Ford Header
