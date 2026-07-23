@@ -63,6 +63,8 @@ _INIT_LOCK = threading.Lock()
 # ---------------------------------------------------------------------------
 _LAST_ERROR: str = ""
 _LAST_STATUS: str = "Not initialized"
+_CACHED_TOKEN: Optional[str] = None
+_CACHED_REPO: Optional[str] = None
 
 
 def get_last_status() -> tuple[str, str]:
@@ -72,6 +74,10 @@ def get_last_status() -> tuple[str, str]:
 
 def _get_config():
     """Return (token, repo) from Streamlit secrets or environment variables."""
+    global _CACHED_TOKEN, _CACHED_REPO
+    if _CACHED_TOKEN and _CACHED_REPO:
+        return _CACHED_TOKEN, _CACHED_REPO
+
     token = None
     repo = None
 
@@ -107,6 +113,10 @@ def _get_config():
     else:
         # Default to this repository if not specified
         repo = "anbarasanramakani/inv-stock-swing"
+
+    if token and repo:
+        _CACHED_TOKEN = token
+        _CACHED_REPO = repo
 
     return token, repo
 

@@ -287,12 +287,6 @@ def cache_set(key: str, value: Any):
     if _HAS_GH and _gh.is_available() and key in _GITHUB_MAP:
         try:
             _gh.queue_write(_GITHUB_MAP[key], value)
-            # Immediate non-blocking background flush to GitHub
-            threading.Thread(
-                target=_gh.flush_now,
-                args=(_GITHUB_MAP[key], value),
-                daemon=True,
-            ).start()
         except Exception as exc:
             print(f"[Cache] GitHub write error for '{key}': {exc}")
 
