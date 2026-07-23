@@ -136,6 +136,9 @@ def prune_30_days(key: str, data: Any) -> Any:
     Enforces a strict 30-day maximum retention policy on all cached items.
     Recommendations, broker calls, and analysis runs older than 30 days are automatically pruned.
     """
+    import time
+    import datetime
+
     if not data:
         return data
 
