@@ -727,6 +727,36 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
+    # GitHub cache sync status badge
+    try:
+        import github_cache as _gh_ui
+        _gh_ok = _gh_ui.is_available()
+    except Exception:
+        _gh_ok = False
+
+    if _gh_ok:
+        st.markdown(
+            '<div style="margin:10px 0 0;padding:6px 10px;background:rgba(63,185,80,0.08);'
+            'border:1px solid rgba(63,185,80,0.2);border-radius:6px;'
+            'display:flex;align-items:center;gap:8px;">'
+            '<span style="width:6px;height:6px;border-radius:50%;background:#3fb950;display:inline-block;"></span>'
+            '<span style="font-size:0.62rem;color:#3fb950;font-weight:700;">GitHub Sync ACTIVE</span>'
+            '<span style="font-size:0.58rem;color:#5a7a9a;margin-left:auto;">Permanent Cache</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div style="margin:10px 0 0;padding:6px 10px;background:rgba(255,166,87,0.06);'
+            'border:1px solid rgba(255,166,87,0.2);border-radius:6px;'
+            'display:flex;align-items:center;gap:8px;">'
+            '<span style="width:6px;height:6px;border-radius:50%;background:#ffa657;display:inline-block;"></span>'
+            '<span style="font-size:0.62rem;color:#ffa657;font-weight:700;">Cache: Session Only</span>'
+            '<span style="font-size:0.58rem;color:#5a7a9a;margin-left:auto;">Add GITHUB_TOKEN</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Ford Header
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1203,13 +1233,8 @@ def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, sta
             state["last_updated"] = time.time()
 
         all_nse_symbols = tick_helper.get_all_nse_tickers()
-        existing_news_list = []
-        if os.path.exists("news_cache.json"):
-            try:
-                with open("news_cache.json", "r", encoding="utf-8") as f:
-                    existing_news_list = json.load(f)
-            except Exception:
-                pass
+        # Load existing news from persistent cache (survives restarts via GitHub)
+        existing_news_list = p_cache.get_news_cache() or []
         news_picks = news_helper.get_today_news_recommendations(state["data_cache"], all_symbols=all_nse_symbols, existing_picks=existing_news_list)
         # Pass previously computed news picks (from cache) to the backtest so it can backtest
         # BOTH hardcoded historical events AND actual previously-computed trade recommendations
@@ -1225,33 +1250,31 @@ def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, sta
             except Exception:
                 broker_calls = []
             state["brokers_picks"] = broker_calls or []
-            # Persist merged broker cache and prune to 30 days
+            # Merge with existing cached broker calls, prune to 30 days
             try:
-                existing_map = {}
-                if os.path.exists("brokers_cache.json"):
-                    try:
-                        with open("brokers_cache.json", "r", encoding="utf-8") as _f:
-                            for _item in json.load(_f):
-                                existing_map[_item.get("Headline", "")] = _item
-                    except Exception:
-                        existing_map = {}
+                existing_brokers = p_cache.get_brokers_cache() or []
+                existing_map = {item.get("Headline", ""): item for item in existing_brokers}
                 for _p in state["brokers_picks"]:
                     existing_map[_p.get("Headline", "")] = _p
                 merged_all = list(existing_map.values())
-                # prune via provider utility if available
                 try:
                     merged_all = news_helper.prune_cache_by_days(merged_all, days=30, date_key='Date')
                 except Exception:
                     pass
-                with open("brokers_cache.json", "w", encoding="utf-8") as _f:
-                    json.dump(merged_all, _f, indent=2, ensure_ascii=False)
+                # Persist via all tiers (session state + disk + GitHub API)
+                p_cache.set_brokers_cache(merged_all)
             except Exception as _bcerr:
                 print(f"Error persisting brokers cache: {_bcerr}")
         except Exception:
             pass
 
-        # Persist merged news cache so future runs reuse previous results (preserve entire history)
-        _persist_news_cache(state["news_picks"])
+        # Persist merged news cache through all tiers including GitHub
+        if state.get("news_picks"):
+            merged_news_map = {item.get("Headline", item.get("headline", "")): item for item in existing_news_list}
+            for item in state["news_picks"]:
+                merged_news_map[item.get("Headline", item.get("headline", ""))] = item
+            merged_news = list(merged_news_map.values())
+            p_cache.set_news_cache(merged_news)
 
         # Save analysis history for persistence and validation
         try:
@@ -1285,7 +1308,7 @@ def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, sta
                 mode="full",
                 pick_list=all_picks,
             )
-            
+
             # Validate broker calls against current prices
             current_price_map = {}
             for pick in all_picks:
@@ -1294,6 +1317,13 @@ def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, sta
                 if ticker and price:
                     current_price_map[ticker] = float(price)
             hist.validate_broker_calls(history_cache, current_price_map)
+
+            # Persist analysis history through all tiers (disk + GitHub API)
+            try:
+                p_cache.set_analysis_history(history_cache)
+            except Exception as _ph_err:
+                print(f"Error persisting analysis history to GitHub: {_ph_err}")
+
         except Exception as he:
             print(f"Error saving analysis history: {he}")
 
@@ -1760,26 +1790,26 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                 st.session_state.ltp_cache = {}
             st.session_state.ltp_cache.update(updated_ltp)
             
-        # 3. Update news catalysts recommendations (Throttled to 20 seconds and written to local cache)
+        # 3. Update news catalysts recommendations (Throttled to 60 seconds)
         if st.session_state.data_cache and (current_time - st.session_state.last_news_scrape_timestamp >= 60.0):
             try:
                 all_nse_symbols = tick_helper.get_all_nse_tickers()
-                existing_news_list = []
-                if os.path.exists("news_cache.json"):
-                    try:
-                        with open("news_cache.json", "r", encoding="utf-8") as f:
-                            existing_news_list = json.load(f)
-                    except Exception:
-                        pass
+                # Load existing news from persistent cache (GitHub-backed)
+                existing_news_list = p_cache.get_news_cache() or []
                 latest_news = news_helper.get_today_news_recommendations(st.session_state.data_cache, all_symbols=all_nse_symbols, existing_picks=existing_news_list)
                 st.session_state.news_picks = pd.DataFrame(latest_news) if latest_news else pd.DataFrame()
 
-                # Save background news (MERGE to preserve earlier news from the day)
-                _persist_news_cache(latest_news)
-                    
+                # Merge and persist via all tiers (session state + disk + GitHub)
+                if latest_news:
+                    merged_map = {item.get("Headline", item.get("headline", "")): item for item in existing_news_list}
+                    for item in latest_news:
+                        merged_map[item.get("Headline", item.get("headline", ""))] = item
+                    p_cache.set_news_cache(list(merged_map.values()))
+
                 st.session_state.last_news_scrape_timestamp = current_time
             except Exception as e:
                 print(f"Error refreshing news in background: {e}")
+
                 
         # 4. Update sync timestamps
         st.session_state.last_sync_time = datetime.datetime.now().strftime("%H:%M:%S")
