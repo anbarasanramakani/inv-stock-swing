@@ -208,8 +208,8 @@ def add_run_to_history(
     cache["last_run_date"] = date_str
     cache["last_run_timestamp"] = time.time()
 
-    # Prune old runs (keep last 60 days)
-    cutoff_ts = time.time() - (60 * 24 * 3600)
+    # Prune old runs (keep last 30 days)
+    cutoff_ts = time.time() - (30 * 24 * 3600)
     cache["runs"] = [r for r in cache["runs"] if r.get("timestamp", 0) > cutoff_ts]
 
     save_history_cache(cache)

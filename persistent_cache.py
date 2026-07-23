@@ -130,6 +130,65 @@ def _is_empty(val: Any) -> bool:
     return False
 
 
+def prune_30_days(key: str, data: Any) -> Any:
+    """
+    Enforces a strict 30-day maximum retention policy on all cached items.
+    Recommendations, broker calls, and analysis runs older than 30 days are automatically pruned.
+    """
+    if not data:
+        return data
+
+    today = datetime.date.today()
+    cutoff_date = today - datetime.timedelta(days=30)
+    cutoff_ts = time.time() - (30 * 86400)
+
+    def _parse_date(item: dict) -> Optional[datetime.date]:
+        for field in ["Date", "date", "DateTime", "datetime", "Trigger Date", "Entry Date"]:
+            val = item.get(field)
+            if val:
+                try:
+                    d_str = str(val)[:10]
+                    return datetime.datetime.strptime(d_str, "%Y-%m-%d").date()
+                except Exception:
+                    pass
+        return None
+
+    try:
+        if key == "analysis_history" and isinstance(data, dict):
+            runs = data.get("runs", [])
+            pruned_runs = []
+            for r in runs:
+                ts = r.get("timestamp", 0)
+                r_date = _parse_date(r)
+                if (ts and ts >= cutoff_ts) or (r_date and r_date >= cutoff_date) or (not ts and not r_date):
+                    pruned_runs.append(r)
+            data["runs"] = pruned_runs
+
+            b_hist = data.get("broker_history", [])
+            pruned_b = []
+            for b in b_hist:
+                b_date = _parse_date(b)
+                if not b_date or b_date >= cutoff_date:
+                    pruned_b.append(b)
+            data["broker_history"] = pruned_b
+            return data
+
+        elif isinstance(data, list):
+            pruned_list = []
+            for item in data:
+                if not isinstance(item, dict):
+                    pruned_list.append(item)
+                    continue
+                i_date = _parse_date(item)
+                if not i_date or i_date >= cutoff_date:
+                    pruned_list.append(item)
+            return pruned_list
+    except Exception as exc:
+        print(f"[Cache Prune Error] {key}: {exc}")
+
+    return data
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -137,22 +196,19 @@ def _is_empty(val: Any) -> bool:
 def cache_get(key: str, default: Any = None) -> Any:
     """
     Retrieve a value from the multi-tier persistent cache.
-
-    Read order:
-      1. st.session_state  (per-session, instant)
-      2. GitHub API        (permanent, ~200 ms, fetched once per key per session)
-      3. Local disk        (ephemeral, but fast)
-      4. Seed JSON file    (git-tracked, always available)
+    Enforces strict 30-day retention pruning.
     """
+    val_to_return = None
+
     # ── Tier 1: session state ──────────────────────────────────────────────
     if _HAS_STREAMLIT:
         ss_key = f"_cache_{key}"
         val = st.session_state.get(ss_key)
         if not _is_empty(val):
-            return val
+            val_to_return = val
 
     # ── Tier 2: GitHub API (fetched once per key per session) ─────────────
-    if key not in _GITHUB_LOADED and key in _GITHUB_MAP:
+    if val_to_return is None and key not in _GITHUB_LOADED and key in _GITHUB_MAP:
         if _HAS_GH and _gh.is_available():
             filepath = _GITHUB_MAP[key]
             try:
@@ -160,59 +216,53 @@ def cache_get(key: str, default: Any = None) -> Any:
                 if not _is_empty(gh_val):
                     _GITHUB_LOADED.add(key)  # Mark loaded only when gh_val is valid!
                     print(f"[Cache] Loaded '{key}' from GitHub ({filepath})")
-                    # Populate lower tiers so subsequent reads are instant
-                    if _HAS_STREAMLIT:
-                        st.session_state[f"_cache_{key}"] = gh_val
-                    try:
-                        dc = _read_disk_cache()
-                        dc[key] = gh_val
-                        _write_disk_cache(dc)
-                    except Exception:
-                        pass
-                    _write_seed_file(key, gh_val)
-                    return gh_val
+                    val_to_return = gh_val
             except Exception as exc:
                 print(f"[Cache] GitHub read error for '{key}': {exc}")
 
     # ── Tier 3: local disk unified cache ──────────────────────────────────
+    if val_to_return is None:
+        try:
+            dc  = _read_disk_cache()
+            val = dc.get(key)
+            if not _is_empty(val):
+                val_to_return = val
+        except Exception:
+            pass
+
+    # ── Tier 4: git-tracked seed file ─────────────────────────────────────
+    if val_to_return is None:
+        seed = _read_seed_file(key)
+        if not _is_empty(seed):
+            val_to_return = seed
+
+    if val_to_return is None:
+        return default
+
+    # Enforce 30-day retention policy
+    pruned_val = prune_30_days(key, val_to_return)
+
+    # Populate session state & disk cache with pruned data
+    if _HAS_STREAMLIT:
+        st.session_state[f"_cache_{key}"] = pruned_val
     try:
-        dc  = _read_disk_cache()
-        val = dc.get(key)
-        if not _is_empty(val):
-            if _HAS_STREAMLIT:
-                st.session_state[f"_cache_{key}"] = val
-            return val
+        dc = _read_disk_cache()
+        dc[key] = pruned_val
+        _write_disk_cache(dc)
     except Exception:
         pass
 
-    # ── Tier 4: git-tracked seed file ─────────────────────────────────────
-    seed = _read_seed_file(key)
-    if not _is_empty(seed):
-        if _HAS_STREAMLIT:
-            st.session_state[f"_cache_{key}"] = seed
-        # Promote to disk for faster access next time
-        try:
-            dc = _read_disk_cache()
-            dc[key] = seed
-            _write_disk_cache(dc)
-        except Exception:
-            pass
-        return seed
-
-    return default
+    return pruned_val
 
 
 def cache_set(key: str, value: Any):
     """
-    Store a value in all cache tiers.
-
-    Write order (all executed):
-      1. st.session_state  -- immediate
-      2. Local disk        -- immediate (works locally; wiped on Cloud restart)
-      3. Seed JSON file    -- immediate local write
-      4. GitHub API        -- queued & immediate async write to GitHub
+    Store a value in all cache tiers. Enforces strict 30-day retention policy.
     """
     import threading
+
+    # Prune recommendations over 30 days old before saving
+    value = prune_30_days(key, value)
 
     # ── Tier 1: session state ──────────────────────────────────────────────
     if _HAS_STREAMLIT:
@@ -241,6 +291,7 @@ def cache_set(key: str, value: Any):
             ).start()
         except Exception as exc:
             print(f"[Cache] GitHub write error for '{key}': {exc}")
+
 
 
 

@@ -2784,7 +2784,7 @@ unsafe_allow_html=True)
         # ── History Data Table ──
         hist_df = hist.get_history_as_dataframe(history_cache)
         if not hist_df.empty:
-            _sec_header("📋", "All Historical Picks (Last 60 Days)", count=len(hist_df))
+            _sec_header("📋", "All Historical Picks (Last 30 Days)", count=len(hist_df))
             
             # Filter controls
             col_f1, col_f2 = st.columns(2)
