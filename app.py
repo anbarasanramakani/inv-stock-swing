@@ -1153,6 +1153,7 @@ def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, sta
         state["bulk_deals_cached"] = None
         state["news_picks"] = []
         state["news_past_results"] = []
+        state["accumulated_damodaran"] = []   # Damodaran technique picks
         state["last_updated"] = time.time()
 
         bulk_deals = []
@@ -1182,13 +1183,16 @@ def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, sta
 
             matching, past_sigs, medium_term = [], [], []
             intraday_picks, intraday_backtest = [], []
+            damodaran_picks = []   # Damodaran technique signals
             for ticker, df in chunk_data.items():
                 try:
                     if float(df['Close'].iloc[-1]) < min_price:
                         continue
-                    res = scr.run_screener_on_data(ticker, df, strategy)
-                    if res and float(res.get('Vol_Ratio', 0)) >= min_vol_ratio:
-                        matching.append(res)
+                    # Collect ALL matching strategies (not just the first)
+                    all_strat_results = scr.run_all_strategies_for_ticker(ticker, df, strategy)
+                    for res in all_strat_results:
+                        if float(res.get('Vol_Ratio', 0)) >= min_vol_ratio:
+                            matching.append(res)
                     past_sigs.extend(scr.track_past_signals(ticker, df, strategy) or [])
                     mt = scr.run_medium_term_screener(ticker, df)
                     if mt:
@@ -1197,6 +1201,10 @@ def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, sta
                     if intra_res:
                         intraday_picks.extend(intra_res)
                     intraday_backtest.extend(intra.backtest_intraday_10days(ticker, df) or [])
+                    # Damodaran techniques
+                    dam_res = scr.run_damodaran_screener(ticker, df)
+                    if dam_res:
+                        damodaran_picks.extend(dam_res)
                 except Exception:
                     continue
 
@@ -1211,6 +1219,7 @@ def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, sta
             state["accumulated_medium_term"].extend(medium_term)
             state["accumulated_intraday_picks"].extend(intraday_picks)
             state["accumulated_intraday_backtest"].extend(intraday_backtest)
+            state["accumulated_damodaran"].extend(damodaran_picks)
 
             try:
                 new_pick_tickers = list({
@@ -1351,6 +1360,7 @@ def _start_background_analysis(raw, strategy, min_price, min_vol_ratio, mode="fu
         "accumulated_medium_term": [],
         "accumulated_intraday_picks": [],
         "accumulated_intraday_backtest": [],
+        "accumulated_damodaran": [],
         "data_cache": {},
         "ltp_cache": {},
         "bulk_deals_cached": None,
@@ -1397,10 +1407,11 @@ def _score_pick(row: dict) -> float:
     return score
 
 
-def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
+def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short", top_n: int = 10):
     """
     Renders stock pick cards in a 3-column grid.
-    Limits to top 5 per section, sorted by probability of target hit.
+    Shows top N picks (default 10) sorted by conviction score.
+    Multi-strategy stocks (Strategy_Count > 1) are promoted and show all strategy badges.
     ltp_map: pre-fetched dict {ticker -> ltp_float}
     """
     df = _ensure_ticker_column(df)
@@ -1410,15 +1421,20 @@ def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
         return
 
     rows = df.to_dict("records")
-    
-    # Score and sort by probability of target hit
+
+    # Score and sort: multi-strategy first, then by score
     for r in rows:
         r["_score"] = _score_pick(r)
+        # Boost score by strategy count (multi-strategy = higher conviction)
+        strat_cnt = r.get("Strategy_Count", 1)
+        if strat_cnt >= 3:     r["_score"] += 40
+        elif strat_cnt == 2:   r["_score"] += 20
+
     rows.sort(key=lambda x: x.get("_score", 0), reverse=True)
-    
-    # Limit to top 5
-    rows = rows[:5]
-    
+
+    # Limit to top N
+    rows = rows[:top_n]
+
     # Render in rows of 3
     for row_start in range(0, len(rows), 3):
         chunk = rows[row_start:row_start + 3]
@@ -1428,16 +1444,24 @@ def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
             symbol  = ticker.replace(".NS", "") if isinstance(ticker, str) and ticker else ""
             if not symbol:
                 symbol = row.get("Symbol", "") or "MARKET"
-            strat   = row.get("Strategy", "—")
-            sl      = row.get("Stop Loss", "")
-            tgt     = row.get("Target", "")
-            rr      = row.get("Risk_Reward", "")
-            rsi_v   = row.get("RSI", None)
-            vol_r   = row.get("Vol_Ratio", None)
-            prev    = float(row.get("Price", 0) or 0)
-            show_price = bool(ticker) and prev > 0
-            ltp     = ltp_map.get(ticker, prev) or prev if show_price else prev
-            bar_col = _STRATEGY_COLORS.get(strat, "#1f6feb")
+            strat       = row.get("Strategy", "—")
+            strategies  = row.get("Strategies", [strat])  # All strategy names
+            strat_cnt   = row.get("Strategy_Count", 1)
+            sl          = row.get("Stop Loss", "")
+            tgt         = row.get("Target", "")
+            rr          = row.get("Risk_Reward", "")
+            rsi_v       = row.get("RSI", None)
+            vol_r       = row.get("Vol_Ratio", None)
+            prev        = float(row.get("Price", 0) or 0)
+            show_price  = bool(ticker) and prev > 0
+            ltp         = ltp_map.get(ticker, prev) or prev if show_price else prev
+            bar_col     = _STRATEGY_COLORS.get(strat, "#1f6feb")
+            is_damodaran = row.get("Damodaran", False)
+            damodaran_type = row.get("Damodaran_Type", "")
+
+            # Damodaran strategies get a purple accent
+            if is_damodaran:
+                bar_col = "#a78bfa" if damodaran_type == "swing" else "#f59e0b"
 
             chg_pct   = ((ltp - prev) / prev * 100) if prev else 0.0
             ltp_color = "#3fb950" if chg_pct >= 0 else "#f85149"
@@ -1445,27 +1469,49 @@ def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
 
             # Get sector & market cap info
             sector = row.get("Sector", "") or (ipo.get_sector(ticker) if ticker else "")
-            mcap = row.get("Market_Cap", "") or ""
-            
+            mcap   = row.get("Market_Cap", "") or ""
+
+            # ── Multi-strategy badge ─────────────────────────────────────
+            multi_badge = ""
+            if strat_cnt >= 2:
+                strat_names_str = " + ".join(str(s).split(":")[-1].strip() for s in strategies[:3])
+                badge_color = "#ff6b35" if strat_cnt >= 3 else "#ffa657"
+                multi_badge = (
+                    f'<div style="margin-bottom:6px;padding:5px 10px;background:rgba(255,107,53,0.12);'
+                    f'border:1px solid rgba(255,107,53,0.35);border-radius:8px;">'
+                    f'<span style="font-size:0.65rem;font-weight:800;color:{badge_color};">'
+                    f'⚡ {strat_cnt} STRATEGIES: {strat_names_str}</span></div>'
+                )
+
+            # ── Damodaran badge ─────────────────────────────────────────
+            damodaran_badge = ""
+            if is_damodaran:
+                dam_color = "#a78bfa" if damodaran_type == "swing" else "#f59e0b"
+                dam_label = "📐 Damodaran Swing" if damodaran_type == "swing" else "⚡ Damodaran Intraday"
+                damodaran_badge = (
+                    f'<div style="margin-bottom:4px;padding:3px 8px;background:rgba(167,139,250,0.1);'
+                    f'border:1px solid rgba(167,139,250,0.3);border-radius:6px;display:inline-block;">'
+                    f'<span style="font-size:0.6rem;font-weight:800;color:{dam_color};">{dam_label}</span></div>'
+                )
+
             # Pill HTML
             pills = ""
             if sector: pills += f'<span class="pill">{sector}</span>'
             if mcap:   pills += f'<span class="pill">{mcap}</span>'
-            if sl:  pills += f'<span class="pill pill-sl">SL ₹{sl}</span>'
-            if tgt: pills += f'<span class="pill pill-tgt">TGT ₹{tgt}</span>'
-            if rr:  pills += f'<span class="pill">{rr}</span>'
+            if sl:     pills += f'<span class="pill pill-sl">SL ₹{sl}</span>'
+            if tgt:    pills += f'<span class="pill pill-tgt">TGT ₹{tgt}</span>'
+            if rr:     pills += f'<span class="pill">{rr}</span>'
             if rsi_v is not None:
-                pills += f'<span class="pill">RSI {rsi_v:.1f}</span>'
+                try:
+                    pills += f'<span class="pill">RSI {float(rsi_v):.1f}</span>'
+                except Exception:
+                    pass
             if vol_r and float(vol_r) > 0:
                 pills += f'<span class="pill">{float(vol_r):.1f}x Vol</span>'
 
             extra = ""
-            # Institutional buyer info (who bought and when) - takes priority
             inst_details = row.get("Institutional_Details", "")
             if inst_details and isinstance(inst_details, str):
-                # Parse institutional details for buyer name and date
-                # Format: "Investor Name (Date)" or just "Investor Name"
-                # If there are multiple separated by " | ", just take the first one for the pill
                 first_inst = inst_details.split(" | ")[0]
                 inst_name = first_inst.split("(")[0].strip() if first_inst else ""
                 inst_date = first_inst.split("(")[-1].replace(")", "") if "(" in first_inst else ""
@@ -1477,7 +1523,7 @@ def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
             elif row.get("Superstar_Buying"):
                 names = row.get("Superstar_Names", "Superstar")
                 extra = f'<span class="pill pill-star">🔥 {names}</span>'
-            elif row.get("High_Conviction"):
+            elif row.get("High_Conviction") and not is_damodaran:
                 extra = '<span class="pill pill-inst">💎 Institutional</span>'
             elif card_type == "news":
                 cat = row.get("Catalyst", "News")
@@ -1485,22 +1531,131 @@ def _render_cards(df: pd.DataFrame, ltp_map: dict, card_type: str = "short"):
                 scope_badge = "🌍 Market-wide" if scope == "Market" else "📰 Stock catalyst"
                 extra = f'<span class="pill pill-news">{scope_badge}</span><span class="pill pill-news">📰 {cat}</span>'
 
+            # Strategy display: show primary + count
+            strat_display = strat if strat_cnt == 1 else f"{strat}"
+
             with col:
                 st.markdown(f"""
                 <div class="terminal-card">
                   <div class="left-bar" style="background:{bar_col};"></div>
+                  {multi_badge}
                   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
                     <div>
                       <div class="card-symbol">{symbol}</div>
-                      <div class="card-strategy">{strat}</div>
+                      <div class="card-strategy">{strat_display}</div>
                     </div>
                     <div style="text-align:right;">
                       <div class="card-price" style="color:{ltp_color};">{f'₹{ltp:,.2f}' if show_price else 'Market-wide'}</div>
                       <div class="card-change" style="color:{ltp_color};">{f'{arrow} {abs(chg_pct):.2f}%' if show_price else 'Macro / sector impact'}</div>
                     </div>
                   </div>
+                  {damodaran_badge}
                   <div>{pills}{extra}</div>
                 </div>""", unsafe_allow_html=True)
+
+
+def _render_broker_cards(b_list: list, ltp_map: dict = None):
+    """
+    Renders broker recommendation cards in a premium 2-column card layout.
+    Each card clearly shows: Broker, Stock, Action/Call, Target, Current Price, Headline.
+    Groups by Action type: BUY/UPGRADE first, then NEUTRAL, then SELL/DOWNGRADE.
+    """
+    if not b_list:
+        st.markdown('<div class="infobox">No broker calls loaded yet. Click "Load Full News" to scrape live recommendations.</div>',
+                    unsafe_allow_html=True)
+        return
+
+    if ltp_map is None:
+        ltp_map = {}
+
+    # Sort: Buy/Upgrade first, then by date
+    def _action_rank(item):
+        a = str(item.get("Action", "")).lower()
+        if any(k in a for k in ["buy", "upgrade", "initiat", "add", "outperform"]):
+            return 0
+        elif any(k in a for k in ["hold", "neutral", "accumulate", "market"]):
+            return 1
+        return 2
+
+    b_sorted = sorted(b_list, key=_action_rank)[:20]  # Top 20 broker calls
+
+    # Render in 2 columns
+    for row_start in range(0, len(b_sorted), 2):
+        chunk = b_sorted[row_start:row_start + 2]
+        cols = st.columns(2)
+        for col, item in zip(cols, chunk):
+            broker     = str(item.get("Broker", "Unknown Broker"))
+            ticker     = str(item.get("Ticker", ""))
+            symbol     = ticker.replace(".NS", "") if ticker else "—"
+            action     = str(item.get("Action", "—"))
+            target     = item.get("Target", None)
+            headline   = str(item.get("Headline", ""))[:120]
+            date_str   = str(item.get("Date", ""))[:10]
+
+            # Action color
+            action_lower = action.lower()
+            if any(k in action_lower for k in ["buy", "upgrade", "initiat", "add", "outperform"]):
+                action_color = "#3fb950"
+                action_bg    = "rgba(63,185,80,0.1)"
+                action_border = "rgba(63,185,80,0.3)"
+                action_icon  = "🟢"
+            elif any(k in action_lower for k in ["sell", "downgrade", "reduce", "underperform"]):
+                action_color = "#f85149"
+                action_bg    = "rgba(248,81,73,0.1)"
+                action_border = "rgba(248,81,73,0.3)"
+                action_icon  = "🔴"
+            else:
+                action_color = "#ffa657"
+                action_bg    = "rgba(255,166,87,0.1)"
+                action_border = "rgba(255,166,87,0.3)"
+                action_icon  = "🟡"
+
+            # LTP and upside
+            try:
+                ltp = float(ltp_map.get(ticker, 0) or 0)
+            except Exception:
+                ltp = 0
+            try:
+                tgt_float = float(target) if target else 0
+            except Exception:
+                tgt_float = 0
+
+            upside_html = ""
+            if ltp > 0 and tgt_float > 0:
+                upside = (tgt_float - ltp) / ltp * 100
+                up_color = "#3fb950" if upside >= 0 else "#f85149"
+                upside_html = f'<div style="font-size:0.7rem;color:{up_color};font-weight:700;margin-top:2px;">Upside: {upside:+.1f}%</div>'
+
+            tgt_display = f"₹{tgt_float:,.0f}" if tgt_float else "—"
+            ltp_display = f"₹{ltp:,.2f}" if ltp > 0 else ""
+            price_line  = f'<span style="font-size:0.65rem;color:#5a7a9a;">{ltp_display}</span>' if ltp_display else ""
+
+            with col:
+                st.markdown(f"""
+<div style="background:#0d1f35;border:1px solid #1e3a5a;border-radius:10px;padding:14px 16px;margin-bottom:10px;position:relative;overflow:hidden;">
+  <div style="position:absolute;top:0;left:0;width:4px;height:100%;background:{action_color};border-radius:4px 0 0 4px;"></div>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+    <div>
+      <div style="font-size:1.05rem;font-weight:900;color:#f0f6ff;letter-spacing:-0.01em;">{symbol if symbol != '—' else '🏦 Market'}</div>
+      <div style="font-size:0.65rem;color:#5a7a9a;font-weight:600;margin-top:1px;">{broker}</div>
+    </div>
+    <div style="text-align:right;">
+      <div style="display:inline-block;padding:4px 12px;background:{action_bg};border:1px solid {action_border};border-radius:20px;">
+        <span style="font-size:0.72rem;font-weight:800;color:{action_color};">{action_icon} {action}</span>
+      </div>
+      <div style="font-size:0.65rem;color:#5a7a9a;margin-top:3px;">{date_str}</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:16px;margin-bottom:8px;align-items:center;">
+    <div>
+      <div style="font-size:0.58rem;color:#5a7a9a;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Target</div>
+      <div style="font-size:0.95rem;font-weight:800;color:#f0f6ff;">{tgt_display}</div>
+      {upside_html}
+    </div>
+    {f'<div><div style="font-size:0.58rem;color:#5a7a9a;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Current</div><div style="font-size:0.85rem;font-weight:700;color:#a0aec0;">{ltp_display}</div></div>' if ltp_display else ''}
+  </div>
+  <div style="font-size:0.68rem;color:#8892a4;line-height:1.5;border-top:1px solid #1e3a5a;padding-top:8px;">{headline}{"..." if len(str(item.get("Headline", ""))) > 120 else ""}</div>
+</div>""", unsafe_allow_html=True)
 
 
 def _highlight_status(row):
@@ -1665,6 +1820,7 @@ if run_full_btn:
         st.session_state.accumulated_medium_term = []
         st.session_state.accumulated_intraday_picks = []
         st.session_state.accumulated_intraday_backtest = []
+        st.session_state.accumulated_damodaran = []
         st.session_state.accumulated_data_cache = {}
         st.session_state.accumulated_ltp_cache = {}
         st.session_state.bulk_deals_cached = None
@@ -1949,6 +2105,14 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                     count=mt_cnt, badge="EMA Cross · BB Squeeze")
         _render_cards(mt_df, ltp_cache, card_type="medium")
 
+        # — F. Damodaran Swing Techniques —
+        damodaran_all = st.session_state.get("accumulated_damodaran", [])
+        dam_swing = [p for p in damodaran_all if p.get("Damodaran_Type") == "swing"]
+        dam_swing_df = pd.DataFrame(dam_swing) if dam_swing else pd.DataFrame()
+        _sec_header("📐", "Damodaran Valuation & Momentum Confluence (Swing)",
+                    count=len(dam_swing_df), badge="Quality Mean Reversion · 52W High · MOS")
+        _render_cards(dam_swing_df, ltp_cache, top_n=10)
+
         # Export
         if not results_df.empty:
             st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
@@ -1987,6 +2151,13 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
             # Short Setups
             _sec_header("🔴", "Intraday SELL-BUY (Short) Setups", count=len(shorts))
             _render_cards(shorts, ltp_cache)
+
+            # Damodaran Intraday Setups
+            damodaran_all = st.session_state.get("accumulated_damodaran", [])
+            dam_intra = [p for p in damodaran_all if p.get("Damodaran_Type") == "intraday"]
+            dam_intra_df = pd.DataFrame(dam_intra) if dam_intra else pd.DataFrame()
+            _sec_header("⚡", "Damodaran Intraday Techniques", count=len(dam_intra_df), badge="Gap Fill · VWAP Bounce · Trend Cont.")
+            _render_cards(dam_intra_df, ltp_cache, top_n=10)
 
             st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
             st.markdown("### 📋 Active Intraday Setups Table")
@@ -2138,29 +2309,52 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
             b_list = brokers_data
         else:
             b_list = p_cache.get_brokers_cache()
-            
+
+        # Stats row
         if b_list and isinstance(b_list, list):
-            b_df = pd.DataFrame(b_list)
-            desired_broker_cols = ["Ticker", "Broker", "Action", "Target", "Headline", "Date"]
-            disp_b_df = pd.DataFrame()
-            for c in desired_broker_cols:
-                disp_b_df[c] = b_df[c] if c in b_df.columns else ""
-            
-            st.dataframe(
-                disp_b_df,
-                column_config={
-                    "Ticker": st.column_config.TextColumn("Stock"),
-                    "Broker": st.column_config.TextColumn("Brokerage Firm"),
-                    "Action": st.column_config.TextColumn("Call / Action"),
-                    "Target": st.column_config.TextColumn("Target Price"),
-                    "Headline": st.column_config.TextColumn("News Headline", width="large"),
-                    "Date": st.column_config.TextColumn("Date"),
-                },
-                hide_index=True,
-                width='stretch',
-            )
-        else:
-            st.markdown('<div class="infobox">No broker calls loaded yet. Click "Load Full News" to scrape live brokerage upgrades & targets.</div>', unsafe_allow_html=True)
+            buy_cnt  = sum(1 for b in b_list if any(k in str(b.get("Action","")).lower() for k in ["buy","upgrade","initiat","add","outperform"]))
+            sell_cnt = sum(1 for b in b_list if any(k in str(b.get("Action","")).lower() for k in ["sell","downgrade","reduce","underperform"]))
+            hold_cnt = len(b_list) - buy_cnt - sell_cnt
+            bc1, bc2, bc3, bc4 = st.columns(4)
+            with bc1: st.metric("Total Calls", len(b_list))
+            with bc2: st.metric("🟢 Buy/Upgrade", buy_cnt)
+            with bc3: st.metric("🔴 Sell/Downgrade", sell_cnt)
+            with bc4: st.metric("🟡 Hold/Neutral", hold_cnt)
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+        # Premium card view
+        _render_broker_cards(b_list if b_list and isinstance(b_list, list) else [], ltp_map=ltp_cache)
+
+        # Also show compact table for data export
+        if b_list and isinstance(b_list, list):
+            with st.expander("📋 View All Broker Calls (Table)", expanded=False):
+                b_df = pd.DataFrame(b_list)
+                desired_broker_cols = ["Ticker", "Broker", "Action", "Target", "Headline", "Date"]
+                disp_b_df = pd.DataFrame()
+                for c in desired_broker_cols:
+                    disp_b_df[c] = b_df[c] if c in b_df.columns else ""
+                st.dataframe(
+                    disp_b_df,
+                    column_config={
+                        "Ticker":   st.column_config.TextColumn("Stock"),
+                        "Broker":   st.column_config.TextColumn("Brokerage Firm"),
+                        "Action":   st.column_config.TextColumn("Call / Action"),
+                        "Target":   st.column_config.TextColumn("Target Price"),
+                        "Headline": st.column_config.TextColumn("News Headline", width="large"),
+                        "Date":     st.column_config.TextColumn("Date"),
+                    },
+                    hide_index=True,
+                    width="stretch",
+                )
+                st.download_button(
+                    "📥 Export Broker Calls (CSV)",
+                    data=b_df.to_csv(index=False).encode(),
+                    file_name=f"broker_calls_{datetime.date.today()}.csv",
+                    mime="text/csv",
+                    key="download_broker_csv",
+                )
+
+
 
     # ══════════════════════════════════════════════════════════════
     # TAB 3 — Backtest tracker
@@ -2649,6 +2843,28 @@ unsafe_allow_html=True)
             else:
                 st.markdown('<div class="infobox">No entries match the selected filters.</div>', unsafe_allow_html=True)
         
+        # ── Strategy / Technique Win Rate Breakdown ──
+        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
+        _sec_header("📊", "Strategy & Technique Winning Rate Breakdown", badge="Per-Strategy Performance")
+        strat_stats_df = hist.get_per_strategy_win_rates(history_cache)
+        if not strat_stats_df.empty:
+            st.dataframe(
+                strat_stats_df,
+                column_config={
+                    "Strategy / Technique": st.column_config.TextColumn("Strategy / Technique"),
+                    "Total Signals": st.column_config.NumberColumn("Signals"),
+                    "Target Met": st.column_config.NumberColumn("Target Met ✅"),
+                    "Stop Loss Hit": st.column_config.NumberColumn("SL Hit 🔴"),
+                    "Active": st.column_config.NumberColumn("Active 🟡"),
+                    "Win Rate (%)": st.column_config.NumberColumn("Win Rate", format="%.1f%%"),
+                    "Avg P&L (%)": st.column_config.NumberColumn("Avg P&L", format="%+.2f%%"),
+                },
+                hide_index=True,
+                width="stretch",
+            )
+        else:
+            st.markdown('<div class="infobox">No strategy win rates recorded yet. Complete analysis runs to track win rates.</div>', unsafe_allow_html=True)
+
         # ── Broker Stats Section ──
         st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
         _sec_header("🏦", "Broker Call Success Rate", badge="Per-Broker Win Rate")

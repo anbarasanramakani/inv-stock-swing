@@ -359,6 +359,73 @@ def get_history_stats(cache: dict) -> dict:
     }
 
 
+def get_per_strategy_win_rates(cache: dict) -> pd.DataFrame:
+    """
+    Compute winning rate and performance stats grouped by strategy / technique category.
+    Special attention is given to Damodaran techniques to show their performance separately.
+    """
+    stats_by_strat = {}
+
+    for run in cache.get("runs", []):
+        for pick in run.get("picks", []):
+            strat = pick.get("Strategy", "Unknown")
+            # Tag Damodaran strategies clearly
+            if pick.get("Damodaran"):
+                dtype = pick.get("Damodaran_Type", "swing")
+                strat = f"Damodaran ({dtype.capitalize()}): {strat.replace('Damodaran: ', '').replace('Damodaran Intraday: ', '')}"
+            
+            if strat not in stats_by_strat:
+                stats_by_strat[strat] = {
+                    "Total Picks": 0,
+                    "Target Met": 0,
+                    "Stop Loss Hit": 0,
+                    "Active": 0,
+                    "Expired": 0,
+                    "Total PnL": 0.0,
+                    "PnL Count": 0,
+                }
+
+            st_data = stats_by_strat[strat]
+            st_data["Total Picks"] += 1
+            status = pick.get("Status", "Active")
+
+            if status == "Target Met":
+                st_data["Target Met"] += 1
+            elif status == "Stop Loss Hit":
+                st_data["Stop Loss Hit"] += 1
+            elif status == "Expired":
+                st_data["Expired"] += 1
+            else:
+                st_data["Active"] += 1
+
+            pnl = pick.get("P&L (%)")
+            if pnl is not None:
+                st_data["Total PnL"] += pnl
+                st_data["PnL Count"] += 1
+
+    rows = []
+    for strat, data in stats_by_strat.items():
+        decided = data["Target Met"] + data["Stop Loss Hit"]
+        win_rate = (data["Target Met"] / decided * 100) if decided > 0 else 0.0
+        avg_pnl = (data["Total PnL"] / data["PnL Count"]) if data["PnL Count"] > 0 else 0.0
+        
+        rows.append({
+            "Strategy / Technique": strat,
+            "Total Signals": data["Total Picks"],
+            "Target Met": data["Target Met"],
+            "Stop Loss Hit": data["Stop Loss Hit"],
+            "Active": data["Active"],
+            "Win Rate (%)": round(win_rate, 1),
+            "Avg P&L (%)": round(avg_pnl, 2),
+        })
+
+    df_stats = pd.DataFrame(rows)
+    if not df_stats.empty:
+        df_stats = df_stats.sort_values(by="Win Rate (%)", ascending=False)
+    return df_stats
+
+
+
 def get_history_as_dataframe(cache: dict) -> pd.DataFrame:
     """Flatten history into a DataFrame for display."""
     records = []
