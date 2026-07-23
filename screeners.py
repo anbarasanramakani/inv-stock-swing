@@ -857,21 +857,137 @@ def damodaran_intraday_trend_continuation(df: pd.DataFrame) -> tuple[bool, dict 
         return False, None
 
 
+def damodaran_g4_technique(df: pd.DataFrame) -> tuple[bool, dict | None]:
+    """
+    Damodaran G4 Technique — Time-Action Swing Breakout Formula.
+    Signal: High volume ratio (>=1.4x), range expansion (>1.2x ATR), strong closing (upper 25% of range), price > EMA20 > EMA50.
+    Theory: Time-Action momentum formula designed for swing trades & stock options breakouts with high risk-reward ratio.
+    """
+    if df is None or len(df) < 55:
+        return False, None
+    r = df.iloc[-1]
+    try:
+        close     = float(r['Close'])
+        open_p    = float(r['Open'])
+        high      = float(r['High'])
+        low       = float(r['Low'])
+        ema20     = float(r['EMA20'])
+        ema50     = float(r['EMA50'])
+        atr       = float(r['ATR'])
+        vol_ratio = float(r['Vol_Ratio']) if not pd.isna(r['Vol_Ratio']) else 0
+        rsi       = float(r['RSI'])
+
+        # Trend alignment: Close > EMA20 > EMA50
+        if not (close > ema20 > ema50):
+            return False, None
+        # Volume expansion >= 1.4x
+        if vol_ratio < 1.4:
+            return False, None
+        # Candle range expansion > 1.2x ATR
+        rng = high - low
+        if rng < 1.2 * atr:
+            return False, None
+        # Strong closing momentum (closes in top 25% of daily range)
+        if rng > 0 and (close - low) / rng < 0.75:
+            return False, None
+
+        target = close + 3.0 * atr
+        sl     = low - 0.5 * atr
+        rr_val = round((target - close) / max((close - sl), 0.01), 2)
+
+        return True, {
+            "Strategy":    "Damodaran G4: Time-Action Breakout",
+            "Price":       round(close, 2),
+            "Target":      round(target, 2),
+            "Stop Loss":   round(sl, 2),
+            "RSI":         round(rsi, 1),
+            "Vol_Ratio":   round(vol_ratio, 2),
+            "Risk_Reward": f"1:{rr_val}",
+            "Entry Range": f"{round(close * 0.997, 2)} - {round(close * 1.003, 2)}",
+            "Reason":      f"G4 Time-Action trigger: Vol {vol_ratio:.1f}x, range expansion ({rng/atr:.1f}x ATR), strong close in top 25% of bar above EMA20/50.",
+            "High_Conviction": True,
+            "Damodaran": True,
+        }
+    except Exception:
+        return False, None
+
+
+def damodaran_g5_technique(df: pd.DataFrame) -> tuple[bool, dict | None]:
+    """
+    Damodaran G5 Technique — Intraday Operator Reversal & Volatility Expansion.
+    Signal: High operator volume (>=1.6x), price reclaimed VWAP after touching lower BB or RSI < 40 in past 3 bars, strong close.
+    Theory: Identifies institutional operator activity and volatility expansion for intraday & index options setups.
+    """
+    if df is None or len(df) < 30:
+        return False, None
+    r = df.iloc[-1]
+    try:
+        close     = float(r['Close'])
+        open_p    = float(r['Open'])
+        high      = float(r['High'])
+        low       = float(r['Low'])
+        vwap      = float(r['VWAP'])
+        atr       = float(r['ATR'])
+        vol_ratio = float(r['Vol_Ratio']) if not pd.isna(r['Vol_Ratio']) else 0
+        rsi       = float(r['RSI'])
+        rng       = high - low
+
+        # Operator volume spike >= 1.6x
+        if vol_ratio < 1.6:
+            return False, None
+        # Price currently above VWAP
+        if close < vwap:
+            return False, None
+        # Touched lower band or oversold within recent 3 bars
+        recent_oversold = any(
+            float(df['Low'].iloc[-i]) <= float(df['BB_Lower'].iloc[-i]) or float(df['RSI'].iloc[-i]) <= 42
+            for i in range(1, 4)
+        )
+        if not recent_oversold:
+            return False, None
+        # Closing in top 30% of day's range
+        if rng > 0 and (close - low) / rng < 0.70:
+            return False, None
+
+        target = close + 2.5 * atr
+        sl     = vwap - 0.4 * atr
+        rr_val = round((target - close) / max((close - sl), 0.01), 2)
+
+        return True, {
+            "Strategy":    "Damodaran G5: Operator Reversal",
+            "Price":       round(close, 2),
+            "Target":      round(target, 2),
+            "Stop Loss":   round(sl, 2),
+            "RSI":         round(rsi, 1),
+            "Vol_Ratio":   round(vol_ratio, 2),
+            "Risk_Reward": f"1:{rr_val}",
+            "Entry Range": f"{round(close * 0.998, 2)} - {round(close * 1.002, 2)}",
+            "Reason":      f"G5 Operator Reversal trigger: Operator Vol {vol_ratio:.1f}x, reclaimed VWAP (₹{vwap:.0f}) after oversold dip.",
+            "High_Conviction": True,
+            "Damodaran": True,
+        }
+    except Exception:
+        return False, None
+
+
 # ---------------------------------------------------------------------------
 # Damodaran Strategy Registry
 # ---------------------------------------------------------------------------
 
 DAMODARAN_SWING_STRATEGIES = {
+    "Damodaran G4: Time-Action Breakout":     damodaran_g4_technique,
     "Damodaran: Mean Reversion Quality":      damodaran_mean_reversion_quality,
     "Damodaran: 52W High Momentum":           damodaran_52w_high_momentum,
     "Damodaran: Margin of Safety Pullback":   damodaran_margin_of_safety_pullback,
 }
 
 DAMODARAN_INTRADAY_STRATEGIES = {
+    "Damodaran G5: Operator Reversal":          damodaran_g5_technique,
     "Damodaran Intraday: Gap Fill":             damodaran_intraday_gap_fill,
     "Damodaran Intraday: VWAP Bounce":          damodaran_intraday_vwap_bounce,
     "Damodaran Intraday: Trend Continuation":   damodaran_intraday_trend_continuation,
 }
+
 
 
 def run_damodaran_screener(ticker: str, df_history: pd.DataFrame) -> list[dict]:

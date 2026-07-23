@@ -2063,6 +2063,11 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
         else:
             nifty50_syms = {s.replace(".NS", "").upper() for s in tick_helper.get_nifty50_tickers()}
 
+            # Extract stocks triggering MULTIPLE strategies into a dedicated separate list
+            grouped_all = scr.group_multi_strategy_picks(results_df.to_dict("records"))
+            multi_picks = [p for p in grouped_all if p.get("Strategy_Count", 1) >= 2]
+            multi_df = pd.DataFrame(multi_picks) if multi_picks else pd.DataFrame()
+
             conv_95_mask = (results_df["Strategy"] == "High-Conviction 95% Pullback")
             opt_mask  = (
                 results_df["Ticker"].str.replace(".NS", "").str.upper().isin(nifty50_syms) &
@@ -2075,6 +2080,12 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
             opt_df  = results_df[opt_mask & ~conv_95_mask].copy()
             hi_df   = results_df[~opt_mask & ~conv_95_mask &  (results_df["High_Conviction"] == True)].copy()
             tech_df = results_df[~opt_mask & ~conv_95_mask & ~(results_df["High_Conviction"] == True)].copy()
+
+        # — ⚡ DEDICATED SECTION: Stocks in Multiple Indicator Groups —
+        if 'multi_df' in locals() and not multi_df.empty:
+            _sec_header("⚡", "Multi-Strategy Confluence Setups — Stocks in Multiple Groups",
+                        count=len(multi_df), badge="Highest Conviction · 2+ Confluence Signals")
+            _render_cards(multi_df, ltp_cache, top_n=10)
 
         # — 🎯 Tier-0 95%+ Win-Rate Conviction Pullbacks —
         _sec_header("🎯", "Tier-0 — 95%+ Win-Rate Conviction Pullbacks",
