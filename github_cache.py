@@ -262,65 +262,47 @@ def github_write_json(filepath: str, data: Any,
 # ---------------------------------------------------------------------------
 # Async background writer
 # ---------------------------------------------------------------------------
+_GH_WRITE_LOCK = threading.Lock()
 
-def _bg_flush_worker():
-    """
-    Background daemon thread that flushes queued writes to GitHub.
-    Runs every 10 seconds.
-    """
-    while True:
-        time.sleep(10)
-        try:
-            with _QUEUE_LOCK:
-                if not _WRITE_QUEUE:
-                    continue
-                items = dict(_WRITE_QUEUE)
-                _WRITE_QUEUE.clear()
-
-            requeue = {}
-            for filepath, payload in items.items():
-                ok = github_write_json(filepath, payload)
-                if ok:
-                    _LAST_WRITE[filepath] = time.time()
-                    print(f"[GH Cache] ✅ Persisted {filepath} to GitHub")
-                else:
-                    requeue[filepath] = payload   # retry next cycle
-
-            if requeue:
-                with _QUEUE_LOCK:
-                    for k, v in requeue.items():
-                        if k not in _WRITE_QUEUE:
-                            _WRITE_QUEUE[k] = v
-
-        except Exception as exc:
-            print(f"[GH Cache] Flush thread error: {exc}")
-
-
-def _ensure_bg_writer():
-    """Start the background writer thread (idempotent)."""
-    global _WRITE_THREAD
-    with _INIT_LOCK:
-        if _WRITE_THREAD is None or not _WRITE_THREAD.is_alive():
-            _WRITE_THREAD = threading.Thread(
-                target=_bg_flush_worker,
-                daemon=True,
-                name="gh-cache-writer",
-            )
-            _WRITE_THREAD.start()
+def _immediate_bg_write(filepath: str, data: Any):
+    """Worker function that runs in an isolated thread but writes immediately."""
+    try:
+        with _GH_WRITE_LOCK:
+            ok = github_write_json(filepath, data)
+            if ok:
+                _LAST_WRITE[filepath] = time.time()
+                print(f"[GH Cache] ✅ Persisted {filepath} to GitHub")
+    except Exception as exc:
+        print(f"[GH Cache] Flush thread error: {exc}")
 
 
 def queue_write(filepath: str, data: Any):
     """
-    Queue a write to GitHub (flushed in background within 10s).
+    Queue a write to GitHub (flushed in background immediately).
+    Uses a Lock to prevent 409 SHA collisions on concurrent updates.
     """
-    _ensure_bg_writer()
-    with _QUEUE_LOCK:
-        _WRITE_QUEUE[filepath] = data
+    t = threading.Thread(
+        target=_immediate_bg_write,
+        args=(filepath, data),
+        daemon=True,
+        name=f"gh-writer-{filepath}"
+    )
+    
+    # Try to attach Streamlit context so the thread isn't killed
+    if _HAS_STREAMLIT:
+        try:
+            from streamlit.runtime.scriptrunner import add_script_run_ctx
+            add_script_run_ctx(t)
+        except Exception:
+            pass
+
+    t.start()
 
 
 def flush_now(filepath: str, data: Any) -> bool:
     """
     Blocking: write immediately to GitHub (bypasses the queue).
     """
-    return github_write_json(filepath, data)
+    with _GH_WRITE_LOCK:
+        return github_write_json(filepath, data)
 
