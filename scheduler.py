@@ -30,6 +30,15 @@ import intraday_screener as intra
 import tickers as tick_helper
 import analysis_history as hist
 
+# Multi-tier persistent cache (survives Streamlit Cloud restarts/deploys)
+try:
+    import persistent_cache as pcache
+    _HAS_PCACHE = True
+except ImportError:
+    pcache = None
+    _HAS_PCACHE = False
+
+
 def run_full_scheduled_analysis():
     """Run Full Analysis on Nifty 1000 universe at scheduled times."""
     print(f"[{datetime.datetime.now()}] Starting scheduled Full Analysis on Nifty 1000...")
@@ -124,8 +133,14 @@ def run_full_scheduled_analysis():
         mode="scheduled",
         pick_list=all_picks,
     )
+    # Also push analysis history to GitHub permanent cache so it survives Cloud restarts
+    if _HAS_PCACHE:
+        try:
+            pcache.set_analysis_history(history_cache)
+        except Exception as e:
+            print(f"Error persisting analysis history to GitHub: {e}")
     
-    # Persist news cache
+    # Persist news cache (local disk + GitHub for permanent storage)
     try:
         existing_map = {}
         if _NEWS_CACHE_FILE.exists():
@@ -137,6 +152,9 @@ def run_full_scheduled_analysis():
         merged = list(existing_map.values())
         with open(_NEWS_CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(merged, f, indent=2, ensure_ascii=False)
+        # Also push to GitHub permanent cache so it survives Cloud restarts
+        if _HAS_PCACHE:
+            pcache.set_news_cache(merged)
     except Exception as e:
         print(f"Error saving news cache: {e}")
     
