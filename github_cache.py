@@ -39,19 +39,11 @@ except ImportError:
 # ---------------------------------------------------------------------------
 _API_BASE = "https://api.github.com"
 
-# Background write queue: { filepath -> data }
-_WRITE_QUEUE: dict = {}
-_QUEUE_LOCK = threading.Lock()
-
-# Rate-limit: track last successful write time per file
+# Track last successful write time per file (for diagnostics only)
 _LAST_WRITE: dict = {}
-_WRITE_INTERVAL = 300   # 5 minutes minimum between writes to the same file
 
 # SHA cache: avoids extra GET calls when we know the file's current SHA
 _FILE_SHA: dict = {}
-
-_WRITE_THREAD: Optional[threading.Thread] = None
-_INIT_LOCK = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -260,49 +252,38 @@ def github_write_json(filepath: str, data: Any,
 
 
 # ---------------------------------------------------------------------------
-# Async background writer
+# Synchronous writer (NO background threads — Streamlit Cloud kills them)
 # ---------------------------------------------------------------------------
 _GH_WRITE_LOCK = threading.Lock()
-
-def _immediate_bg_write(filepath: str, data: Any):
-    """Worker function that runs in an isolated thread but writes immediately."""
-    try:
-        with _GH_WRITE_LOCK:
-            ok = github_write_json(filepath, data)
-            if ok:
-                _LAST_WRITE[filepath] = time.time()
-                print(f"[GH Cache] ✅ Persisted {filepath} to GitHub")
-    except Exception as exc:
-        print(f"[GH Cache] Flush thread error: {exc}")
 
 
 def queue_write(filepath: str, data: Any):
     """
-    Queue a write to GitHub (flushed in background immediately).
-    Uses a Lock to prevent 409 SHA collisions on concurrent updates.
-    """
-    t = threading.Thread(
-        target=_immediate_bg_write,
-        args=(filepath, data),
-        daemon=True,
-        name=f"gh-writer-{filepath}"
-    )
+    Write to GitHub synchronously (blocks until complete).
     
-    # Try to attach Streamlit context so the thread isn't killed
-    if _HAS_STREAMLIT:
-        try:
-            from streamlit.runtime.scriptrunner import add_script_run_ctx
-            add_script_run_ctx(t)
-        except Exception:
-            pass
-
-    t.start()
+    ⚠ CRITICAL: Streamlit Cloud kills ALL background threads (daemon AND
+    non-daemon) at the script re-run boundary.  Async writes via daemon
+    threads were silently lost, making the permanent cache appear broken.
+    
+    This function now calls flush_now() directly — a blocking synchronous
+    write protected by a global lock.  For cache writes (news, analysis
+    history etc.) the ~200-800 ms latency is acceptable; lost data is not.
+    """
+    with _GH_WRITE_LOCK:
+        ok = github_write_json(filepath, data)
+        if ok:
+            _LAST_WRITE[filepath] = time.time()
+            print(f"[GH Cache] ✅ Persisted {filepath} to GitHub")
+        else:
+            print(f"[GH Cache] ❌ FAILED to persist {filepath} to GitHub: {_LAST_ERROR}")
+        return ok
 
 
 def flush_now(filepath: str, data: Any) -> bool:
     """
-    Blocking: write immediately to GitHub (bypasses the queue).
+    Blocking: write immediately to GitHub.
+    Identical to queue_write — both are now synchronous.
+    Kept for API compatibility.
     """
-    with _GH_WRITE_LOCK:
-        return github_write_json(filepath, data)
+    return queue_write(filepath, data)
 

@@ -217,10 +217,16 @@ def cache_get(key: str, default: Any = None) -> Any:
             filepath = _GITHUB_MAP[key]
             try:
                 gh_val = _gh.github_read_json(filepath)
+                # Mark as loaded REGARDLESS of whether data is empty.
+                # Without this, an empty GitHub file (e.g. "[]" or "{}")
+                # triggers a GitHub API call on EVERY cache_get() — wasting
+                # rate-limit quota and slowing every page load.
+                _GITHUB_LOADED.add(key)
                 if not _is_empty(gh_val):
-                    _GITHUB_LOADED.add(key)  # Mark loaded only when gh_val is valid!
                     print(f"[Cache] Loaded '{key}' from GitHub ({filepath})")
                     val_to_return = gh_val
+                else:
+                    print(f"[Cache] GitHub '{key}' is empty, will use lower tiers")
             except Exception as exc:
                 print(f"[Cache] GitHub read error for '{key}': {exc}")
 
