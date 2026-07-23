@@ -1022,9 +1022,13 @@ def _safe_df(records):
     df_out = pd.DataFrame(records)
     for col in df_out.columns:
         if pd.api.types.is_object_dtype(df_out[col]) or pd.api.types.is_string_dtype(df_out[col]):
+            # Step 1: Replace common string non-value markers with NaN
+            marker_patterns = ['N/A', 'NA', 'n/a', 'N/A%', '–', '-', '—', '']
+            df_out[col] = df_out[col].replace(marker_patterns, np.nan)
+            # Step 2: Try numeric conversion (coerce any remaining non-numeric to NaN)
             converted = pd.to_numeric(df_out[col], errors='coerce')
-            non_missing = df_out[col].notna()
-            if non_missing.any() and converted.notna().sum() == non_missing.sum():
+            # Step 3: If ANY numeric values exist, keep the converted column
+            if converted.notna().any():
                 df_out[col] = converted
     return df_out
 
