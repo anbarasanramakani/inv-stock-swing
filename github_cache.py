@@ -120,7 +120,9 @@ def is_available() -> bool:
 
 
 def _headers(token: str) -> dict:
-    # Use Bearer token authorization format (works for both ghp_ and github_pat_ tokens)
+    # GitHub personal access tokens (ghp_ and github_pat_) work with
+    # "Bearer" auth.  "token" prefix is for OAuth tokens.
+    # Fine-grained PATs (github_pat_) require Bearer format.
     auth_val = f"Bearer {token}" if not token.startswith("token ") else token
     return {
         "Authorization": auth_val,
@@ -252,7 +254,7 @@ def github_write_json(filepath: str, data: Any,
 
 
 # ---------------------------------------------------------------------------
-# Synchronous writer (NO background threads — Streamlit Cloud kills them)
+# Synchronous writer (NO background threads -- Streamlit Cloud kills them)
 # ---------------------------------------------------------------------------
 _GH_WRITE_LOCK = threading.Lock()
 
@@ -260,12 +262,12 @@ _GH_WRITE_LOCK = threading.Lock()
 def queue_write(filepath: str, data: Any):
     """
     Write to GitHub synchronously (blocks until complete).
-    
-    ⚠ CRITICAL: Streamlit Cloud kills ALL background threads (daemon AND
+
+    CRITICAL: Streamlit Cloud kills ALL background threads (daemon AND
     non-daemon) at the script re-run boundary.  Async writes via daemon
     threads were silently lost, making the permanent cache appear broken.
-    
-    This function now calls flush_now() directly — a blocking synchronous
+
+    This function now calls flush_now() directly -- a blocking synchronous
     write protected by a global lock.  For cache writes (news, analysis
     history etc.) the ~200-800 ms latency is acceptable; lost data is not.
     """
@@ -273,17 +275,16 @@ def queue_write(filepath: str, data: Any):
         ok = github_write_json(filepath, data)
         if ok:
             _LAST_WRITE[filepath] = time.time()
-            print(f"[GH Cache] ✅ Persisted {filepath} to GitHub")
+            print(f"[GH Cache] Persisted {filepath} to GitHub")
         else:
-            print(f"[GH Cache] ❌ FAILED to persist {filepath} to GitHub: {_LAST_ERROR}")
+            print(f"[GH Cache] FAILED to persist {filepath} to GitHub: {_LAST_ERROR}")
         return ok
 
 
 def flush_now(filepath: str, data: Any) -> bool:
     """
     Blocking: write immediately to GitHub.
-    Identical to queue_write — both are now synchronous.
+    Identical to queue_write -- both are now synchronous.
     Kept for API compatibility.
     """
     return queue_write(filepath, data)
-
