@@ -249,7 +249,7 @@ def fetch_broker_calls(all_symbols: list = None, max_items: int = 40) -> list:
             'Headline': title,
             'Broker': broker,
             'Action': action,
-            'Target': target if target else 'N/A',
+            'Target': target if target is not None else None,
             'Link': it.get('link', ''),
             'DateTime': dt,
             'Date': date_only,

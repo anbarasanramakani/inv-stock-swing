@@ -1062,6 +1062,30 @@ def _safe_df(records):
     return df_out
 
 
+def _is_missing_marker(value):
+    if value is None or pd.isna(value):
+        return True
+    if isinstance(value, str):
+        normalized = value.strip().replace('%', '').lower()
+        return normalized in {"", "n/a", "na", "nan", "null", "none", "-", "–", "—"}
+    return False
+
+
+def _sanitize_display_df(df: pd.DataFrame, numeric_cols=None) -> pd.DataFrame:
+    """Normalize missing markers before Streamlit/Arrow serialization."""
+    if df is None or df.empty:
+        return df
+    out = df.copy()
+    for col in out.columns:
+        if pd.api.types.is_object_dtype(out[col]) or pd.api.types.is_string_dtype(out[col]):
+            out[col] = out[col].map(lambda v: np.nan if _is_missing_marker(v) else v)
+    if numeric_cols:
+        for col in numeric_cols:
+            if col in out.columns:
+                out[col] = pd.to_numeric(out[col], errors='coerce')
+    return out
+
+
 _ANALYSIS_STATE_LOCK = threading.Lock()
 
 
@@ -2212,10 +2236,7 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
             st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
             st.markdown("### 📋 Active Intraday Setups Table")
             show_intra = intra_df[["Ticker", "Strategy", "Type", "Price", "Entry Range", "Target", "Stop Loss", "RSI", "Vol_Ratio", "Reason"]].copy()
-            # Coerce numeric columns to prevent PyArrow serialization ArrowTypeError
-            for numeric_col in ["Price", "Target", "Stop Loss", "RSI", "Vol_Ratio"]:
-                if numeric_col in show_intra.columns:
-                    show_intra[numeric_col] = pd.to_numeric(show_intra[numeric_col], errors='coerce')
+            show_intra = _sanitize_display_df(show_intra, numeric_cols=["Price", "Target", "Stop Loss", "RSI", "Vol_Ratio"])
             st.dataframe(
                 show_intra,
                 column_config={
@@ -2313,10 +2334,7 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                     show_news[col] = news_df[col]
                 else:
                     show_news[col] = ""
-            # Coerce numeric columns to prevent PyArrow serialization ArrowTypeError
-            for numeric_col in ["Price", "Target", "Stop Loss"]:
-                if numeric_col in show_news.columns:
-                    show_news[numeric_col] = pd.to_numeric(show_news[numeric_col], errors='coerce')
+            show_news = _sanitize_display_df(show_news, numeric_cols=["Price", "Target", "Stop Loss"])
             st.dataframe(
                 show_news,
                 column_config={
@@ -2383,6 +2401,7 @@ if st.session_state.screener_results is not None or st.session_state.news_picks 
                 disp_b_df = pd.DataFrame()
                 for c in desired_broker_cols:
                     disp_b_df[c] = b_df[c] if c in b_df.columns else ""
+                disp_b_df = _sanitize_display_df(disp_b_df)
                 st.dataframe(
                     disp_b_df,
                     column_config={
