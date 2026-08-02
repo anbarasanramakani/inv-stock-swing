@@ -2612,16 +2612,20 @@ unsafe_allow_html=True)
                     gmp_val = ipo_analysis.get("gmp", 0)
                     listing_pct = ipo_analysis.get("listing_gain_pct", 0)
                     gmp_badge = f'<span class="pill pill-tgt">GMP: ₹{gmp_val:.0f} ({listing_pct:.0f}%)</span>' if gmp_val > 0 else ""
-                    
+
                     # Sentiment badge
                     sentiment = ipo_analysis.get("sentiment", {})
                     sent_label = sentiment.get("label", "Neutral")
-                    sent_badge = f'<span class="pill pill-tgt" style="color:{"#00c853" if sent_label=="Positive" else "#ff4d4d" if sent_label=="Negative" else "#a78bfa"};">📰 {sent_label}</span>' if sentiment.get("total_items", 0) > 0 else ""
-                    
+                    sent_color = "#00c853" if sent_label == "Positive" else "#ff4d4d" if sent_label == "Negative" else "#a78bfa"
+                    sent_badge = f'<span class="pill pill-tgt" style="color:{sent_color};">📰 {sent_label}</span>' if sentiment.get("total_items", 0) > 0 else ""
+
                     # Peer count badge
                     peers = ipo_analysis.get("peer_analysis", {})
                     peer_badge = f'<span class="pill" style="color:#38bdf8;">📊 {peers.get("peers_found", 0)} peers</span>' if peers.get("peers_found", 0) > 0 else ""
-                    
+
+                    growth_opportunity = str(ipo_analysis.get("growth_runway") or "Moderate growth opportunity.")
+                    insight_text = growth_opportunity if len(growth_opportunity) <= 140 else growth_opportunity[:137] + "..."
+
                     open_date_html = ""
                     if ipo_analysis.get('open_date'):
                         open_date_html = f"""<div style="margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;border-top:1px solid #0d1f35;padding-top:8px;">
@@ -2657,6 +2661,9 @@ unsafe_allow_html=True)
 <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Financials</span><br><span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('financial_score',0)}/100</span></div>
 <div><span style="font-size:0.6rem;color:#5a7a9a;text-transform:uppercase;font-weight:700;">Valuation</span><br><span style="font-size:0.8rem;font-weight:600;color:#dde5f0;">{ipo_analysis.get('valuation_score',0)}/100</span></div>
 </div>
+<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:rgba(56,189,248,0.06);color:#cfe7ff;border:1px solid rgba(56,189,248,0.15);font-size:0.72rem;line-height:1.55;">
+<strong>Growth Opportunity:</strong> {insight_text}
+</div>
 <div style="margin-top:6px;font-size:0.72rem;color:#8aaccc;line-height:1.6;">{ipo_analysis.get('recommendation_reason','')}</div>
 {open_date_html}
 </div>"""
@@ -2666,8 +2673,9 @@ unsafe_allow_html=True)
                     with st.expander(f"🔍 Deep Analysis & Financial Profile for {ipo_analysis.get('name')}"):
                         # Company Overview
                         st.markdown("### 🏢 Company Overview & Business Model")
-                        st.markdown(ipo_analysis.get("company_description"))
-                        
+                        st.markdown(f"**Sector:** {ipo_analysis.get('sector', 'N/A')}\n\n{ipo_analysis.get('company_description')}")
+                        st.markdown(f"**Growth opportunity:** {ipo_analysis.get('growth_runway', 'Moderate growth opportunity.')}")
+
                         # Peer Comparison (if available)
                         peer_analysis = ipo_analysis.get("peer_analysis", {})
                         if peer_analysis.get("peers"):

@@ -682,40 +682,64 @@ def analyze_ipo(ipo: dict) -> dict:
     price_band = ipo.get("price_band", "N/A")
     min_amount = ipo.get("min_amount", 0)
     lot_size = ipo.get("lot_size", 0)
-    
+
     # Sector classification
     sector = classify_sector_by_name(name)
-    
+    sector = sector or "OTHER / DIVERSIFIED"
+
     # Peer analysis
     peers = get_peer_group_for_sector(sector)
-    peer_analysis = {"sector": sector, "peers": peers[:5]}
-    
-    # Listing gain probability
+    peer_analysis = {"sector": sector, "peers": peers[:5], "peers_found": len(peers)}
+
+    # Listing gain probability and growth assessment
     listing_score = _calculate_listing_score(ipo, sector, peer_analysis)
-    
-    # Revenue growth opportunity assessment
     growth_assessment = _assess_growth_potential(ipo, sector, peer_analysis)
-    
-    # Overall rating
-    overall_score = (listing_score["score"] + growth_assessment["score"]) / 2
-    
-    # Recommendation
+
+    # Financial / valuation readouts derived from the IPO profile
+    market_demand_bonus = 5 if sector in ["IT / TECHNOLOGY", "ENERGY / POWER", "PHARMA / HEALTHCARE"] else 0
+    valuation_score = min(100, max(30, 65 + market_demand_bonus + (10 if "upcoming" in str(ipo.get("status", "")).lower() else 0)))
+    financial_score = min(100, max(35, 55 + (15 if sector in ["IT / TECHNOLOGY", "PHARMA / HEALTHCARE", "FMCG / CONSUMER"] else 5)))
+
+    # GMP / demand signal
+    gmp_lookup = fetch_investorgain_gmp()
+    gmp_name_key = re.sub(r"\s+", " ", name).strip().lower()
+    gmp_entry = gmp_lookup.get(gmp_name_key) or gmp_lookup.get(gmp_name_key.split()[0])
+    gmp_value = float(gmp_entry.get("gmp", 0.0)) if isinstance(gmp_entry, dict) else 0.0
+    listing_gain_pct = float(gmp_entry.get("listing_yield_pct", 0.0)) if isinstance(gmp_entry, dict) else 0.0
+
+    # Sentiment signal
+    sentiment_data = fetch_google_news_sentiment(name)
+    sentiment_score = float(sentiment_data.get("score", 0.0) or 0.0)
+    if sentiment_score > 0.2:
+        sent_label = "Positive"
+    elif sentiment_score < -0.2:
+        sent_label = "Negative"
+    else:
+        sent_label = "Neutral"
+
+    overall_score = (
+        listing_score["score"] * 0.35 +
+        growth_assessment["score"] * 0.35 +
+        financial_score * 0.15 +
+        valuation_score * 0.15
+    )
+
     if overall_score >= 75:
         recommendation = "STRONG BUY"
-        recommendation_reason = "Strong fundamentals with high listing gain potential"
+        recommendation_reason = "Investment case is strong: sector demand, growth runway, and valuation support a robust listing setup."
     elif overall_score >= 60:
         recommendation = "BUY"
-        recommendation_reason = "Good prospects with reasonable valuation"
+        recommendation_reason = "Solid sector alignment and reasonable growth profile, with balanced listing and long-term upside."
     elif overall_score >= 40:
         recommendation = "HOLD / SUBSCRIBE"
-        recommendation_reason = "Fair opportunity, moderate upside potential"
+        recommendation_reason = "Cautious but acceptable: benefits exist, yet valuation and sector momentum need tighter monitoring."
     elif overall_score >= 25:
         recommendation = "AVOID"
-        recommendation_reason = "Risky with limited upside"
+        recommendation_reason = "Marginal value proposition; weak valuation support or elevated execution risk reduces attractiveness."
     else:
         recommendation = "SKIP"
-        recommendation_reason = "Unfavorable risk-reward profile"
-        
+        recommendation_reason = "Poor risk-reward profile, limited growth visibility, or heavy execution risk."
+
     # Fetch LIVE real-time news via Google News RSS
     live_news = []
     try:
@@ -735,7 +759,17 @@ def analyze_ipo(ipo: dict) -> dict:
             })
     except Exception as e:
         print(f"[IPO News] Error fetching live news for {name}: {e}")
-    
+
+    dynamic_details = generate_dynamic_ipo_details(name)
+    details = {
+        "company_description": ipo.get("company_description") or dynamic_details.get("company_description", "No description available."),
+        "development_scope": ipo.get("development_scope") or dynamic_details.get("development_scope", "Steady industry trends expected."),
+        "growth_runway": ipo.get("growth_runway") or dynamic_details.get("growth_runway", "Moderate growth anticipated."),
+        "listing_gains_rationale": ipo.get("listing_gains_rationale") or dynamic_details.get("listing_gains_rationale", "Subject to listing-day market sentiment."),
+        "financial_insights": ipo.get("financial_insights") or dynamic_details.get("financial_insights", "Valuation aligned with sector averages."),
+        "sector": sector,
+    }
+
     return {
         "name": name,
         "symbol": symbol,
@@ -752,15 +786,25 @@ def analyze_ipo(ipo: dict) -> dict:
         "listing_gain_score": round(listing_score["score"], 1),
         "growth_assessment": growth_assessment["summary"],
         "growth_score": round(growth_assessment["score"], 1),
+        "financial_score": round(financial_score, 1),
+        "valuation_score": round(valuation_score, 1),
+        "gmp": round(gmp_value, 1),
+        "listing_gain_pct": round(listing_gain_pct, 1),
+        "sentiment": {
+            "score": round(sentiment_score, 2),
+            "label": sent_label,
+            "total_items": len(live_news),
+        },
         "overall_score": round(overall_score, 1),
         "recommendation": recommendation,
         "recommendation_reason": recommendation_reason,
         "live_news": live_news,
-        "company_description": ipo.get("company_description", "No description available."),
-        "development_scope": ipo.get("development_scope", "Steady industry trends expected."),
-        "growth_runway": ipo.get("growth_runway", "Moderate growth anticipated."),
-        "listing_gains_rationale": ipo.get("listing_gains_rationale", "Subject to listing-day market sentiment."),
-        "financial_insights": ipo.get("financial_insights", "Valuation aligned with sector averages.")
+        "company_description": details["company_description"],
+        "development_scope": details["development_scope"],
+        "growth_runway": details["growth_runway"],
+        "listing_gains_rationale": details["listing_gains_rationale"],
+        "financial_insights": details["financial_insights"],
+        "sector_summary": f"{sector} IPO: {growth_assessment['summary']}"
     }
 
 
