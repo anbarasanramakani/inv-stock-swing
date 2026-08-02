@@ -8,7 +8,13 @@ using exact-match firm names (no fuzzy partial strings) + minimum qty filter.
 """
 from typing import Optional
 import pandas as pd
-import streamlit as st
+# Streamlit is optional — not available when running headlessly in GitHub Actions
+try:
+    import streamlit as st
+    _HAS_STREAMLIT = True
+except ImportError:
+    st = None
+    _HAS_STREAMLIT = False
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 try:
@@ -139,12 +145,13 @@ def get_latest_fii_sentiment() -> tuple[Optional[float], Optional[str]]:
     return None, None
 
 
+
 @retry(
     stop=stop_after_attempt(2),
     wait=wait_exponential(multiplier=1, min=1, max=3),
     retry=retry_if_exception_type((Exception,))
 )
-def get_recent_bulk_deals() -> Optional[pd.DataFrame]:
+def _get_recent_bulk_deals_impl() -> Optional[pd.DataFrame]:
     """
     Fetches bulk deals for the last 7 days.
     Returns cleaned DataFrame or None.
@@ -196,6 +203,23 @@ def get_recent_bulk_deals() -> Optional[pd.DataFrame]:
     except Exception as e:
         print(f"[Bulk Deals] Error: {e}")
     return None
+
+
+def get_recent_bulk_deals() -> Optional[pd.DataFrame]:
+    """Fetches recent bulk deals (last 7 days).
+
+    Cached for 30 min when running under Streamlit; uncached in headless mode.
+    """
+    return _get_recent_bulk_deals_impl()
+
+
+# Apply Streamlit cache at runtime — safe because st.cache_data is only
+# called when we have confirmed st is the real Streamlit module (not None).
+if _HAS_STREAMLIT and st is not None:
+    try:
+        get_recent_bulk_deals = st.cache_data(ttl=1800)(get_recent_bulk_deals)
+    except Exception:
+        pass  # If cache wrapping fails for any reason, run uncached
 
 
 def _parse_qty(val) -> int:

@@ -98,8 +98,11 @@ def _flatten_and_clean(df: pd.DataFrame, min_rows: int = 2) -> pd.DataFrame | No
 # ---------------------------------------------------------------------------
 def _cache_data_decorator(fn):
     """Apply st.cache_data only when running under Streamlit."""
-    if _HAS_STREAMLIT:
-        return st.cache_data(ttl=60)(fn)
+    if _HAS_STREAMLIT and st is not None:
+        try:
+            return st.cache_data(ttl=60)(fn)
+        except Exception:
+            pass
     return fn
 
 @_cache_data_decorator
