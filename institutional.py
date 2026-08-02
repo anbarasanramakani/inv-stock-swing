@@ -91,7 +91,6 @@ MIN_CONVICTION_QTY = 5_000
 # Public functions
 # ---------------------------------------------------------------------------
 
-@st.cache_data(ttl=1800)
 @retry(
     stop=stop_after_attempt(2),
     wait=wait_exponential(multiplier=1, min=2, max=5),
@@ -218,6 +217,7 @@ def get_recent_bulk_deals() -> Optional[pd.DataFrame]:
 if _HAS_STREAMLIT and st is not None:
     try:
         get_recent_bulk_deals = st.cache_data(ttl=1800)(get_recent_bulk_deals)
+        get_latest_fii_sentiment = st.cache_data(ttl=1800)(get_latest_fii_sentiment)
     except Exception:
         pass  # If cache wrapping fails for any reason, run uncached
 
