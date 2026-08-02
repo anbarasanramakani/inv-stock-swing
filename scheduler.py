@@ -2,8 +2,10 @@
 scheduler.py
 Scheduled Full Analysis runner for NSE Pulse.
 
-This script runs the Full Analysis on Nifty 1000 at scheduled times.
-Intended to be run via Windows Task Scheduler or cron.
+Run via GitHub Actions (.github/workflows/daily_analysis.yml) at 9:20 AM IST
+every weekday (Mon-Fri). Can also be run manually or via Windows Task Scheduler.
+
+GitHub Actions sets GITHUB_TOKEN and GITHUB_REPO env vars automatically.
 
 Usage:
   python scheduler.py --mode full --universe "Nifty 1000" --strategy "All Strategies"
@@ -18,6 +20,28 @@ from pathlib import Path
 
 # Must run from project directory
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# ── IST timezone (via pytz if available, fallback to UTC+5:30 offset) ──────────
+try:
+    import pytz
+    _IST = pytz.timezone("Asia/Kolkata")
+    def _now_ist():
+        return datetime.datetime.now(_IST)
+except ImportError:
+    _UTC_OFFSET = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+    def _now_ist():
+        return datetime.datetime.now(_UTC_OFFSET)
+
+# ── Inject GITHUB_TOKEN from env into github_cache before importing it ──────────
+# GitHub Actions exposes the token as GITHUB_TOKEN env var.
+# github_cache._get_config() already reads os.environ["GITHUB_TOKEN"] as fallback.
+_gh_token_env = os.environ.get("GITHUB_TOKEN", "")
+_gh_repo_env  = os.environ.get("GITHUB_REPO", "")
+if _gh_token_env:
+    # Pre-seed the module-level cached values so background threads can find them
+    os.environ["GITHUB_TOKEN"] = _gh_token_env
+if _gh_repo_env:
+    os.environ["GITHUB_REPO"] = _gh_repo_env
 
 _PROJECT_DIR = Path(__file__).parent
 _NEWS_CACHE_FILE = _PROJECT_DIR / "news_cache.json"
@@ -39,9 +63,26 @@ except ImportError:
     _HAS_PCACHE = False
 
 
+_LAST_RUN_FILE = Path(__file__).parent / ".last_scheduled_run.json"
+
+
+def _write_last_run_status(status: str, picks_count: int = 0):
+    """Write last run info to a small JSON file for the Streamlit sidebar badge."""
+    try:
+        with open(_LAST_RUN_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "timestamp": _now_ist().strftime("%Y-%m-%d %H:%M IST"),
+                "status": status,
+                "picks": picks_count,
+            }, f)
+    except Exception as e:
+        print(f"[Scheduler] Could not write last-run file: {e}")
+
+
 def run_full_scheduled_analysis():
     """Run Full Analysis on Nifty 1000 universe at scheduled times."""
-    print(f"[{datetime.datetime.now()}] Starting scheduled Full Analysis on Nifty 1000...")
+    now_ist = _now_ist()
+    print(f"[{now_ist.strftime('%Y-%m-%d %H:%M IST')}] Starting scheduled Full Analysis on Nifty 1000...")
     
     all_nse_symbols = tick_helper.get_all_nse_tickers()
     
@@ -158,26 +199,43 @@ def run_full_scheduled_analysis():
     except Exception as e:
         print(f"Error saving news cache: {e}")
     
-    print(f"[{datetime.datetime.now()}] Scheduled Full Analysis complete. Generated {len(swing_results)} swing picks, {len(medium_results)} medium-term, {len(news_picks)} news picks.")
+    total_picks = len(swing_results) + len(medium_results) + len(intraday_picks) + len(news_picks)
+    print(f"[{_now_ist().strftime('%Y-%m-%d %H:%M IST')}] Scheduled Full Analysis complete.")
+    print(f"  Swing: {len(swing_results)} | Medium: {len(medium_results)} | Intraday: {len(intraday_picks)} | News: {len(news_picks)}")
+    _write_last_run_status("success", total_picks)
     return len(swing_results)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="NSE Pulse Scheduled Analysis")
-    parser.add_argument("--mode", default="full", help="Analysis mode")
-    parser.add_argument("--universe", default="Nifty 1000", help="Stock universe")
-    parser.add_argument("--schedule-check", action="store_true", help="Only run if within 5 mins of scheduled time")
+    parser.add_argument("--mode",            default="full",       help="Analysis mode")
+    parser.add_argument("--universe",        default="Nifty 1000", help="Stock universe")
+    parser.add_argument("--strategy",        default="All Strategies", help="Strategy filter")
+    parser.add_argument("--schedule-check",  action="store_true",  help="Only run at 9:20 IST (±5 min)")
+    parser.add_argument("--weekdays-only",   action="store_true",  help="Skip weekends (Sat/Sun)")
     args = parser.parse_args()
-    
+
+    now_ist = _now_ist()
+
+    # ── Weekday guard ──────────────────────────────────────────────────────────
+    if args.weekdays_only and now_ist.weekday() >= 5:   # 5=Sat, 6=Sun
+        print(f"Weekend ({now_ist.strftime('%A')}). Skipping.")
+        sys.exit(0)
+
+    # ── Time-window guard ──────────────────────────────────────────────────────
     if args.schedule_check:
-        now = datetime.datetime.now()
-        ist_hour, ist_min = now.hour, now.minute
-        target_times = [(9, 20), (15, 30)]  # 9:20 IST and 15:30 IST
+        ist_hour, ist_min = now_ist.hour, now_ist.minute
+        target_times = [(9, 20), (15, 30)]  # 9:20 AM and 3:30 PM IST
         is_target_time = any(
             ist_hour == h and abs(ist_min - m) <= 5
             for h, m in target_times
         )
         if not is_target_time:
-            print(f"Not a scheduled time ({ist_hour}:{ist_min}). Skipping.")
+            print(f"Not a scheduled time ({ist_hour:02d}:{ist_min:02d} IST). Skipping.")
             sys.exit(0)
-    
-    run_full_scheduled_analysis()
+
+    try:
+        run_full_scheduled_analysis()
+    except Exception as exc:
+        _write_last_run_status(f"error: {exc}")
+        print(f"[Scheduler] FATAL ERROR: {exc}")
+        raise

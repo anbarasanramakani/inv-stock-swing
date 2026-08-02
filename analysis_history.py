@@ -316,6 +316,63 @@ def validate_previous_picks(cache: dict, current_picks: List[dict] = None):
         save_history_cache(cache)
 
 
+def validate_picks_with_live_prices(cache: dict) -> int:
+    """
+    Validate all active picks by fetching live prices from yfinance in bulk.
+    Called when the Analysis History tab is opened (not just on new scan).
+    Returns the number of picks updated.
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        return 0
+
+    # Collect all active picks that still need validation
+    active_tickers: set = set()
+    for run in cache.get("runs", []):
+        for pick in run.get("picks", []):
+            if pick.get("Status") == "Active":
+                ticker = pick.get("Ticker", "")
+                if ticker:
+                    active_tickers.add(ticker)
+
+    if not active_tickers:
+        return 0
+
+    # Batch-download latest close prices
+    price_map: dict = {}
+    try:
+        batch = " ".join(list(active_tickers))
+        data = yf.download(batch, period="2d", interval="1d",
+                           group_by="ticker", auto_adjust=True,
+                           progress=False, threads=True)
+        if len(active_tickers) == 1:
+            ticker = list(active_tickers)[0]
+            try:
+                price_map[ticker] = float(data["Close"].dropna().iloc[-1])
+            except Exception:
+                pass
+        else:
+            for ticker in active_tickers:
+                try:
+                    price_map[ticker] = float(data[ticker]["Close"].dropna().iloc[-1])
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"[HistValidation] yfinance batch error: {e}")
+        return 0
+
+    # Re-use existing validate logic
+    validate_previous_picks(cache, [{"Ticker": t, "Price": p} for t, p in price_map.items()])
+
+    updated = sum(
+        1 for run in cache.get("runs", [])
+        for pick in run.get("picks", [])
+        if pick.get("Status") != "Active" and pick.get("Exit Date") == datetime.date.today().isoformat()
+    )
+    return updated
+
+
 def get_history_stats(cache: dict) -> dict:
     """Compute aggregate statistics from history."""
     total_picks = 0
@@ -362,18 +419,25 @@ def get_history_stats(cache: dict) -> dict:
 def get_per_strategy_win_rates(cache: dict) -> pd.DataFrame:
     """
     Compute winning rate and performance stats grouped by strategy / technique category.
-    Special attention is given to Damodaran techniques to show their performance separately.
+    Damodaran G4 (Swing) and G5 (Intraday) are tracked in separate clearly-labelled rows.
     """
-    stats_by_strat = {}
+    stats_by_strat: dict = {}
 
     for run in cache.get("runs", []):
         for pick in run.get("picks", []):
-            strat = pick.get("Strategy", "Unknown")
-            # Tag Damodaran strategies clearly
-            if pick.get("Damodaran"):
-                dtype = pick.get("Damodaran_Type", "swing")
-                strat = f"Damodaran ({dtype.capitalize()}): {strat.replace('Damodaran: ', '').replace('Damodaran Intraday: ', '')}"
-            
+            raw_strat = pick.get("Strategy", "Unknown")
+            is_damodaran = bool(pick.get("Damodaran"))
+
+            if is_damodaran:
+                dtype = pick.get("Damodaran_Type", "swing").capitalize()
+                # Clean inner label
+                clean = raw_strat
+                for prefix in ["Damodaran Intraday: ", "Damodaran: "]:
+                    clean = clean.replace(prefix, "")
+                strat = f"🧮 Damodaran {dtype}: {clean}"
+            else:
+                strat = raw_strat
+
             if strat not in stats_by_strat:
                 stats_by_strat[strat] = {
                     "Total Picks": 0,
@@ -383,47 +447,53 @@ def get_per_strategy_win_rates(cache: dict) -> pd.DataFrame:
                     "Expired": 0,
                     "Total PnL": 0.0,
                     "PnL Count": 0,
+                    "_is_damodaran": is_damodaran,
                 }
 
-            st_data = stats_by_strat[strat]
-            st_data["Total Picks"] += 1
+            s = stats_by_strat[strat]
+            s["Total Picks"] += 1
             status = pick.get("Status", "Active")
 
             if status == "Target Met":
-                st_data["Target Met"] += 1
+                s["Target Met"] += 1
             elif status == "Stop Loss Hit":
-                st_data["Stop Loss Hit"] += 1
+                s["Stop Loss Hit"] += 1
             elif status == "Expired":
-                st_data["Expired"] += 1
+                s["Expired"] += 1
             else:
-                st_data["Active"] += 1
+                s["Active"] += 1
 
             pnl = pick.get("P&L (%)")
             if pnl is not None:
-                st_data["Total PnL"] += pnl
-                st_data["PnL Count"] += 1
+                s["Total PnL"] += pnl
+                s["PnL Count"] += 1
 
     rows = []
     for strat, data in stats_by_strat.items():
         decided = data["Target Met"] + data["Stop Loss Hit"]
         win_rate = (data["Target Met"] / decided * 100) if decided > 0 else 0.0
         avg_pnl = (data["Total PnL"] / data["PnL Count"]) if data["PnL Count"] > 0 else 0.0
-        
+
         rows.append({
             "Strategy / Technique": strat,
             "Total Signals": data["Total Picks"],
-            "Target Met": data["Target Met"],
-            "Stop Loss Hit": data["Stop Loss Hit"],
-            "Active": data["Active"],
+            "Decided": decided,
+            "Target Met ✅": data["Target Met"],
+            "SL Hit 🔴": data["Stop Loss Hit"],
+            "Active 🟡": data["Active"],
             "Win Rate (%)": round(win_rate, 1),
             "Avg P&L (%)": round(avg_pnl, 2),
+            "_is_damodaran": data["_is_damodaran"],
         })
 
     df_stats = pd.DataFrame(rows)
     if not df_stats.empty:
-        df_stats = df_stats.sort_values(by="Win Rate (%)", ascending=False)
+        # Sort: Damodaran first (highlighted), then by win rate
+        df_stats = df_stats.sort_values(
+            by=["_is_damodaran", "Win Rate (%)"],
+            ascending=[False, False]
+        )
     return df_stats
-
 
 
 def get_history_as_dataframe(cache: dict) -> pd.DataFrame:

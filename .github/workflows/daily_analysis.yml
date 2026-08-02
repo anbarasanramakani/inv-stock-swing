@@ -1,0 +1,52 @@
+name: Daily NSE Analysis -- 9:20 AM IST
+
+on:
+  schedule:
+    - cron: "50 3 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      universe:
+        description: "Stock Universe"
+        required: false
+        default: "Nifty 1000"
+
+jobs:
+  run-analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pandas numpy yfinance requests beautifulsoup4 lxml pytz cachetools tenacity nselib
+
+      - name: Run Full Analysis (Nifty 1000 -- All Strategies)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: |
+          python scheduler.py --mode full --universe "Nifty 1000" --strategy "All Strategies"
+
+      - name: Commit updated cache files
+        run: |
+          git config user.name "NSE Pulse Bot"
+          git config user.email "nse-pulse-bot@users.noreply.github.com"
+          git add -f analysis_history_cache.json news_cache.json brokers_cache.json nifty1000_cache.csv nifty500_cache.csv all_nse_cache.csv || true
+          git diff --cached --quiet || git commit -m "chore: auto-analysis $(date +'%Y-%m-%d') [skip ci]"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

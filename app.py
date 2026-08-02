@@ -763,6 +763,35 @@ with st.sidebar:
         if _gh_err:
             st.caption(f"❌ {_gh_err}")
 
+    # ── Scheduled Auto-Run Status badge ────────────────────────────────────────
+    _LAST_RUN_PATH = os.path.join(_PROJECT_DIR, ".last_scheduled_run.json")
+    _sched_ts, _sched_status, _sched_picks = "", "never", 0
+    if os.path.exists(_LAST_RUN_PATH):
+        try:
+            with open(_LAST_RUN_PATH, "r", encoding="utf-8") as _f:
+                _sched_data = json.load(_f)
+            _sched_ts      = _sched_data.get("timestamp", "")
+            _sched_status  = _sched_data.get("status", "unknown")
+            _sched_picks   = _sched_data.get("picks", 0)
+        except Exception:
+            pass
+
+    _sched_ok = _sched_status == "success"
+    _sched_color = "#3fb950" if _sched_ok else ("#ffa657" if _sched_ts else "#5a7a9a")
+    _sched_dot   = "#3fb950" if _sched_ok else ("#ffa657" if _sched_ts else "#5a7a9a")
+    _sched_label = f"✅ {_sched_ts}" if _sched_ok else ("⚠️ Failed" if _sched_ts else "Not run yet")
+    _sched_sub   = f"{_sched_picks} picks" if _sched_ok else "Check GitHub Actions log"
+    st.markdown(
+        f'<div style="margin:8px 0 0;padding:6px 10px;background:rgba(0,102,204,0.07);'
+        f'border:1px solid rgba(0,102,204,0.2);border-radius:6px;'
+        f'display:flex;align-items:center;gap:8px;">'
+        f'<span style="width:6px;height:6px;border-radius:50%;background:{_sched_dot};display:inline-block;"></span>'
+        f'<div><span style="font-size:0.62rem;color:{_sched_color};font-weight:700;">⏰ Auto-Analysis 9:20 AM IST</span><br>'
+        f'<span style="font-size:0.55rem;color:#5a7a9a;">{_sched_label} · {_sched_sub}</span></div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Ford Header
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2693,11 +2722,8 @@ unsafe_allow_html=True)
                             
                             for news in live_news:
                                 news_type = news.get("type", "news")
-                                
-                                # Icon by type
                                 type_icon = "📰" if news_type == "news" else "🌐" if news_type == "website" else "🐦" if news_type == "social" else "📄"
                                 source_label = news.get("source", "News")
-                                
                                 st.markdown(f"""<div style="background:rgba(0,102,204,0.04);border:1px solid #0d1f35;border-radius:6px;padding:8px 12px;margin-bottom:6px;border-left:3px solid #0066cc;">
                                 <div style="display:flex;justify-content:space-between;font-size:0.65rem;color:#5a7a9a;margin-bottom:3px;">
                                 <span>{type_icon} {source_label} · {news.get('date','')}</span>
@@ -2758,40 +2784,193 @@ unsafe_allow_html=True)
     # TAB 6 — Analysis History with validation + Broker stats
     # ══════════════════════════════════════════════════════════════
     with tab5:
-        st.markdown("""
-        <div class="infobox">
-          <b>📜 Persistent Analysis History with Target/SL Validation</b><br>
-          Every full analysis run is saved. Previous picks are automatically validated against 
-          current prices: <b style="color:#3fb950;">Target Met ✅</b> / 
-          <b style="color:#f85149;">Stop Loss Hit 🔴</b> / 
-          <b style="color:#a78bfa;">Active 🟡</b> / Expired.
-          Short trades (SELL-BUY) are validated with reversed SL/Target logic.
+
+
+        # ── Load + auto-validate picks on every tab open ──────────────────────
+        history_cache = hist.load_history_cache()
+
+        # Auto-validate active picks against live yfinance prices
+        # Use session flag to avoid re-fetching on every Streamlit re-run
+        _hist_validated_key = "_hist_live_validated_today"
+        _today_str = datetime.date.today().isoformat()
+        if st.session_state.get(_hist_validated_key) != _today_str:
+            with st.spinner("🔄 Validating active picks against live prices..."):
+                try:
+                    n_updated = hist.validate_picks_with_live_prices(history_cache)
+                    st.session_state[_hist_validated_key] = _today_str
+                    if n_updated > 0:
+                        st.toast(f"✅ {n_updated} pick(s) outcome updated (Target Met / SL Hit)!", icon="📊")
+                        history_cache = hist.load_history_cache()  # reload after save
+                except Exception as _ve:
+                    print(f"[History Tab] Live validation error: {_ve}")
+
+        # ── Header banner ─────────────────────────────────────────────────────
+        runs_count = len(history_cache.get("runs", []))
+        oldest_run = ""
+        if runs_count > 0:
+            all_dates = sorted([r.get("date","") for r in history_cache["runs"] if r.get("date")], reverse=False)
+            oldest_run = all_dates[0] if all_dates else ""
+        st.markdown(f"""
+        <div style="background:linear-gradient(135deg,rgba(0,102,204,0.12) 0%,rgba(0,50,100,0.08) 100%);
+                    border:1px solid rgba(0,102,204,0.25);border-radius:10px;padding:14px 18px;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+            <div>
+              <span style="font-size:1.05rem;font-weight:800;color:#dde5f0;">📜 Analysis History</span>
+              <span style="font-size:0.72rem;color:#5a7a9a;margin-left:10px;">30-day rolling window · Auto-validated daily</span>
+            </div>
+            <div style="display:flex;gap:14px;font-size:0.7rem;color:#5a7a9a;">
+              <span>📅 <b style="color:#38bdf8;">{runs_count}</b> analysis runs</span>
+              {'<span>📆 Since <b style="color:#38bdf8;">' + oldest_run + '</b></span>' if oldest_run else ''}
+              <span>🗑️ Auto-clears picks &gt;30 days</span>
+            </div>
+          </div>
+          <div style="margin-top:8px;font-size:0.72rem;color:#7a9ab8;line-height:1.5;">
+            Every full scan is auto-saved. Active picks are validated daily:
+            <b style="color:#3fb950;">Target Met ✅</b> /
+            <b style="color:#f85149;">Stop Loss Hit 🔴</b> /
+            <b style="color:#a78bfa;">Active 🟡</b> /
+            Expired. Short trades validated with reversed SL/Target logic.
+          </div>
         </div>
         """, unsafe_allow_html=True)
 
-        history_cache = hist.load_history_cache()
-        
-        # ── Overall Stats ──
+        # ── Overall KPI Summary ───────────────────────────────────────────────
         stats = hist.get_history_stats(history_cache)
-        if stats["total_picks"] > 0:
-            hc1, hc2, hc3, hc4, hc5 = st.columns(5)
-            hc1.metric("Total Historical Picks", stats["total_picks"])
-            hc2.metric("✅ Target Met", stats["target_met"])
-            hc3.metric("🔴 Stop Loss Hit", stats["stop_loss_hit"])
-            hc4.metric("🟡 Active", stats["active"])
-            hc5.metric("🏆 Win Rate", f"{stats['win_rate']:.1f}%")
-            
-            st.markdown(f'<div style="margin-top:-8px; margin-bottom:12px; color:#5a7a9a; font-size:0.75rem;">Avg P&L: {stats["avg_pnl"]:+.2f}% · Expired: {stats["expired"]}</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="infobox">No analysis history yet. Run a full analysis to start tracking.</div>', unsafe_allow_html=True)
 
-        # ── History Data Table ──
+        if stats["total_picks"] > 0:
+            decided = stats["target_met"] + stats["stop_loss_hit"]
+            win_rate = stats["win_rate"]
+            win_color = "#3fb950" if win_rate >= 55 else ("#f0a500" if win_rate >= 40 else "#f85149")
+            pnl_color = "#3fb950" if stats["avg_pnl"] >= 0 else "#f85149"
+
+            st.markdown(f"""
+            <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:18px;">
+              <div style="background:#08111e;border:1px solid #0d1f35;border-top:3px solid #0066cc;border-radius:8px;padding:12px 14px;text-align:center;">
+                <div style="font-size:1.4rem;font-weight:900;color:#dde5f0;">{stats['total_picks']}</div>
+                <div style="font-size:0.62rem;color:#5a7a9a;text-transform:uppercase;letter-spacing:.06em;margin-top:3px;">Total Picks</div>
+              </div>
+              <div style="background:#08111e;border:1px solid #0d1f35;border-top:3px solid #3fb950;border-radius:8px;padding:12px 14px;text-align:center;">
+                <div style="font-size:1.4rem;font-weight:900;color:#3fb950;">{stats['target_met']}</div>
+                <div style="font-size:0.62rem;color:#5a7a9a;text-transform:uppercase;letter-spacing:.06em;margin-top:3px;">Target Met ✅</div>
+              </div>
+              <div style="background:#08111e;border:1px solid #0d1f35;border-top:3px solid #f85149;border-radius:8px;padding:12px 14px;text-align:center;">
+                <div style="font-size:1.4rem;font-weight:900;color:#f85149;">{stats['stop_loss_hit']}</div>
+                <div style="font-size:0.62rem;color:#5a7a9a;text-transform:uppercase;letter-spacing:.06em;margin-top:3px;">SL Hit 🔴</div>
+              </div>
+              <div style="background:#08111e;border:1px solid #0d1f35;border-top:3px solid #a78bfa;border-radius:8px;padding:12px 14px;text-align:center;">
+                <div style="font-size:1.4rem;font-weight:900;color:#a78bfa;">{stats['active']}</div>
+                <div style="font-size:0.62rem;color:#5a7a9a;text-transform:uppercase;letter-spacing:.06em;margin-top:3px;">Active 🟡</div>
+              </div>
+              <div style="background:#08111e;border:1px solid #0d1f35;border-top:3px solid {win_color};border-radius:8px;padding:12px 14px;text-align:center;">
+                <div style="font-size:1.4rem;font-weight:900;color:{win_color};">{win_rate:.1f}%</div>
+                <div style="font-size:0.62rem;color:#5a7a9a;text-transform:uppercase;letter-spacing:.06em;margin-top:3px;">Win Rate 🏆</div>
+              </div>
+              <div style="background:#08111e;border:1px solid #0d1f35;border-top:3px solid {pnl_color};border-radius:8px;padding:12px 14px;text-align:center;">
+                <div style="font-size:1.4rem;font-weight:900;color:{pnl_color};">{stats['avg_pnl']:+.2f}%</div>
+                <div style="font-size:0.62rem;color:#5a7a9a;text-transform:uppercase;letter-spacing:.06em;margin-top:3px;">Avg P&amp;L 📈</div>
+              </div>
+            </div>
+            <div style="font-size:0.7rem;color:#5a7a9a;margin-top:-8px;margin-bottom:16px;">
+              Decided: {decided} picks (Target Met + SL Hit) · Expired: {stats['expired']}
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div style="background:rgba(0,102,204,0.06);border:1px solid #0d1f35;border-radius:8px;
+                        padding:24px;text-align:center;color:#5a7a9a;margin-bottom:16px;">
+              <div style="font-size:2rem;margin-bottom:8px;">📭</div>
+              <div style="font-size:0.85rem;color:#7a9ab8;font-weight:600;">No analysis history yet</div>
+              <div style="font-size:0.72rem;margin-top:4px;">Run a full analysis scan to start tracking your daily suggestions with winning rate.</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ── Per-Strategy Win Rate Table ────────────────────────────────────────
+        st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+        _sec_header("📊", "Strategy & Technique Winning Rate", badge="30-Day Performance")
+        strat_stats_df = hist.get_per_strategy_win_rates(history_cache)
+
+        if not strat_stats_df.empty:
+            # Separate Damodaran from regular strategies for visual grouping
+            dam_df = strat_stats_df[strat_stats_df.get("_is_damodaran", False) == True].copy() if "_is_damodaran" in strat_stats_df.columns else pd.DataFrame()
+            reg_df = strat_stats_df[strat_stats_df.get("_is_damodaran", False) != True].copy() if "_is_damodaran" in strat_stats_df.columns else strat_stats_df.copy()
+
+            display_cols = ["Strategy / Technique", "Total Signals", "Decided", "Target Met ✅", "SL Hit 🔴", "Active 🟡", "Win Rate (%)", "Avg P&L (%)"]
+            col_cfg = {
+                "Strategy / Technique": st.column_config.TextColumn("Strategy / Technique", width="large"),
+                "Total Signals": st.column_config.NumberColumn("Signals", format="%d"),
+                "Decided": st.column_config.NumberColumn("Decided", format="%d"),
+                "Target Met ✅": st.column_config.NumberColumn("Target Met ✅", format="%d"),
+                "SL Hit 🔴": st.column_config.NumberColumn("SL Hit 🔴", format="%d"),
+                "Active 🟡": st.column_config.NumberColumn("Active 🟡", format="%d"),
+                "Win Rate (%)": st.column_config.ProgressColumn("Win Rate", format="%.1f%%", min_value=0, max_value=100),
+                "Avg P&L (%)": st.column_config.NumberColumn("Avg P&L", format="%+.2f%%"),
+            }
+
+            # Damodaran section (highlighted separately)
+            if not dam_df.empty:
+                st.markdown("""
+                <div style="display:flex;align-items:center;gap:8px;margin:10px 0 6px;">
+                  <span style="background:linear-gradient(90deg,#7c3aed,#a78bfa);color:#fff;font-size:0.62rem;
+                               font-weight:800;padding:3px 10px;border-radius:20px;letter-spacing:.06em;">
+                    🧮 DAMODARAN TECHNIQUES
+                  </span>
+                  <span style="font-size:0.65rem;color:#7a9ab8;">G4 Swing Breakout & G5 Intraday Reversal tracked separately</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Style Damodaran rows
+                def _style_damodaran_win(val):
+                    if isinstance(val, (int, float)):
+                        if val >= 60: return "color:#3fb950;font-weight:700;"
+                        elif val >= 40: return "color:#f0a500;font-weight:700;"
+                        else: return "color:#f85149;font-weight:700;"
+                    return ""
+
+                display_dam = dam_df[[c for c in display_cols if c in dam_df.columns]].copy()
+                try:
+                    styled_dam = display_dam.style.map(_style_damodaran_win, subset=["Win Rate (%)"])
+                except Exception:
+                    styled_dam = display_dam
+
+                st.dataframe(styled_dam, column_config=col_cfg, hide_index=True, width="stretch")
+
+            # Regular strategies section
+            if not reg_df.empty:
+                st.markdown("""
+                <div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px;">
+                  <span style="background:rgba(0,102,204,0.2);color:#38bdf8;font-size:0.62rem;
+                               font-weight:800;padding:3px 10px;border-radius:20px;letter-spacing:.06em;">
+                    📈 TECHNICAL STRATEGIES
+                  </span>
+                </div>
+                """, unsafe_allow_html=True)
+
+                def _style_win_rate(val):
+                    if isinstance(val, (int, float)):
+                        if val >= 60: return "color:#3fb950;font-weight:700;"
+                        elif val >= 40: return "color:#f0a500;font-weight:700;"
+                        else: return "color:#f85149;font-weight:700;"
+                    return ""
+
+                display_reg = reg_df[[c for c in display_cols if c in reg_df.columns]].copy()
+                try:
+                    styled_reg = display_reg.style.map(_style_win_rate, subset=["Win Rate (%)"])
+                except Exception:
+                    styled_reg = display_reg
+
+                st.dataframe(styled_reg, column_config=col_cfg, hide_index=True, width="stretch")
+        else:
+            st.markdown('<div class="infobox">No strategy win rates recorded yet. Complete analysis runs to track win rates per strategy.</div>', unsafe_allow_html=True)
+
+        # ── Daily Picks History Table ─────────────────────────────────────────
+        st.markdown("<div style='height:18px'></div>", unsafe_allow_html=True)
         hist_df = hist.get_history_as_dataframe(history_cache)
+
         if not hist_df.empty:
-            _sec_header("📋", "All Historical Picks (Last 30 Days)", count=len(hist_df))
-            
+            _sec_header("📋", "All Daily Suggestions — Last 30 Days", count=len(hist_df))
+
             # Filter controls
-            col_f1, col_f2 = st.columns(2)
+            col_f1, col_f2, col_f3 = st.columns(3)
             with col_f1:
                 status_filter = st.multiselect(
                     "Filter by Status",
@@ -2806,18 +2985,26 @@ unsafe_allow_html=True)
                     default=[],
                     key="hist_source_filter"
                 )
-            
+            with col_f3:
+                strat_options = sorted(hist_df["Strategy"].dropna().unique().tolist())
+                strat_filter = st.multiselect(
+                    "Filter by Strategy",
+                    options=strat_options,
+                    default=[],
+                    key="hist_strat_filter"
+                )
+
             display_df = hist_df.copy()
             if status_filter:
                 display_df = display_df[display_df["Status"].isin(status_filter)]
             if source_filter:
                 display_df = display_df[display_df["Source"].isin(source_filter)]
-            
+            if strat_filter:
+                display_df = display_df[display_df["Strategy"].isin(strat_filter)]
+
             if not display_df.empty:
-                # Sort by Entry Date descending
                 display_df = display_df.sort_values("Entry Date", ascending=False)
-                
-                # Color code the Status column
+
                 def _style_status(val):
                     if val == "Target Met":
                         return "color: #3fb950; font-weight: 700;"
@@ -2825,17 +3012,26 @@ unsafe_allow_html=True)
                         return "color: #f85149; font-weight: 700;"
                     elif val == "Active":
                         return "color: #a78bfa; font-weight: 700;"
+                    elif val == "Expired":
+                        return "color: #5a7a9a; font-weight: 600;"
                     return ""
-                
+
+                def _style_pnl(val):
+                    try:
+                        v = float(val)
+                        return "color:#3fb950;font-weight:700;" if v > 0 else ("color:#f85149;font-weight:700;" if v < 0 else "")
+                    except Exception:
+                        return ""
+
                 try:
-                    styled_hist = display_df.style.map(_style_status, subset=["Status"])
+                    styled_hist = display_df.style.map(_style_status, subset=["Status"]).map(_style_pnl, subset=["P&L (%)"])
                 except Exception:
                     styled_hist = display_df
-                
+
                 st.dataframe(
                     styled_hist,
                     column_config={
-                        "Entry Date": st.column_config.TextColumn("Date"),
+                        "Entry Date": st.column_config.TextColumn("Entry Date"),
                         "Ticker": st.column_config.TextColumn("Stock"),
                         "Strategy": st.column_config.TextColumn("Strategy"),
                         "Type": st.column_config.TextColumn("Type"),
@@ -2849,72 +3045,65 @@ unsafe_allow_html=True)
                         "Exit Date": st.column_config.TextColumn("Exit Date"),
                     },
                     hide_index=True,
-                    width='stretch',
-                    height=400,
+                    width="stretch",
+                    height=460,
                 )
-                
-                st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
-                st.download_button(
-                    "📥 Export History (CSV)",
-                    data=display_df.to_csv(index=False).encode(),
-                    file_name=f"analysis_history_{datetime.date.today()}.csv",
-                    mime="text/csv",
-                    key="download_history_csv"
-                )
+
+                col_dl1, col_dl2 = st.columns([1, 3])
+                with col_dl1:
+                    st.download_button(
+                        "📥 Export History (CSV)",
+                        data=display_df.to_csv(index=False).encode(),
+                        file_name=f"analysis_history_{datetime.date.today()}.csv",
+                        mime="text/csv",
+                        key="download_history_csv"
+                    )
             else:
                 st.markdown('<div class="infobox">No entries match the selected filters.</div>', unsafe_allow_html=True)
-        
-        # ── Strategy / Technique Win Rate Breakdown ──
-        st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
-        _sec_header("📊", "Strategy & Technique Winning Rate Breakdown", badge="Per-Strategy Performance")
-        strat_stats_df = hist.get_per_strategy_win_rates(history_cache)
-        if not strat_stats_df.empty:
+
+        # ── Broker Stats Section ───────────────────────────────────────────────
+        st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+        _sec_header("🏦", "Broker Call Success Rate", badge="Per-Broker Win Rate")
+
+        broker_stats_df = hist.get_broker_stats_dataframe(history_cache)
+        if not broker_stats_df.empty:
+            def _style_broker_win(val):
+                if isinstance(val, (int, float)):
+                    if val >= 60: return "color:#3fb950;font-weight:700;"
+                    elif val >= 40: return "color:#f0a500;font-weight:700;"
+                    else: return "color:#f85149;font-weight:700;"
+                return ""
+            try:
+                styled_broker = broker_stats_df.style.map(_style_broker_win, subset=["Win Rate (%)"])
+            except Exception:
+                styled_broker = broker_stats_df
             st.dataframe(
-                strat_stats_df,
+                styled_broker,
                 column_config={
-                    "Strategy / Technique": st.column_config.TextColumn("Strategy / Technique"),
-                    "Total Signals": st.column_config.NumberColumn("Signals"),
-                    "Target Met": st.column_config.NumberColumn("Target Met ✅"),
-                    "Stop Loss Hit": st.column_config.NumberColumn("SL Hit 🔴"),
-                    "Active": st.column_config.NumberColumn("Active 🟡"),
-                    "Win Rate (%)": st.column_config.NumberColumn("Win Rate", format="%.1f%%"),
-                    "Avg P&L (%)": st.column_config.NumberColumn("Avg P&L", format="%+.2f%%"),
+                    "Broker": st.column_config.TextColumn("Broker"),
+                    "Total Calls": st.column_config.NumberColumn("Total Calls"),
+                    "Successful": st.column_config.NumberColumn("Successful"),
+                    "Win Rate (%)": st.column_config.ProgressColumn("Win Rate", format="%.1f%%", min_value=0, max_value=100),
                 },
                 hide_index=True,
                 width="stretch",
             )
         else:
-            st.markdown('<div class="infobox">No strategy win rates recorded yet. Complete analysis runs to track win rates.</div>', unsafe_allow_html=True)
+            st.markdown('<div class="infobox">No broker call history yet. Broker picks with ticker &amp; target will be tracked automatically on each full analysis run.</div>', unsafe_allow_html=True)
 
-        # ── Broker Stats Section ──
-        st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
-        _sec_header("🏦", "Broker Call Success Rate", badge="Per-Broker Win Rate")
-        
-        broker_stats_df = hist.get_broker_stats_dataframe(history_cache)
-        if not broker_stats_df.empty:
-            st.dataframe(
-                broker_stats_df,
-                column_config={
-                    "Broker": st.column_config.TextColumn("Broker"),
-                    "Total Calls": st.column_config.NumberColumn("Total Calls"),
-                    "Successful": st.column_config.NumberColumn("Successful"),
-                    "Win Rate (%)": st.column_config.NumberColumn("Win Rate", format="%.1f%%"),
-                },
-                hide_index=True,
-                width='stretch',
-            )
-        else:
-            st.markdown('<div class="infobox">No broker call history yet. Broker picks with ticker & target will be tracked automatically on each full analysis run.</div>', unsafe_allow_html=True)
-
-        # ── Recent Broker Calls ──
+        # ── Recent Broker Calls ────────────────────────────────────────────────
         if history_cache.get("broker_history"):
             st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
             _sec_header("📋", "Recent Broker Calls", count=len(history_cache["broker_history"]))
             broker_df = pd.DataFrame(history_cache["broker_history"])
             if not broker_df.empty:
-                broker_df = broker_df.sort_values("Entry Date", ascending=False).head(20)
+                broker_df = broker_df.sort_values("Entry Date", ascending=False).head(30)
+                try:
+                    styled_broker_hist = broker_df.style.map(_style_status, subset=["Status"])
+                except Exception:
+                    styled_broker_hist = broker_df
                 st.dataframe(
-                    broker_df,
+                    styled_broker_hist,
                     column_config={
                         "Broker": st.column_config.TextColumn("Broker"),
                         "Ticker": st.column_config.TextColumn("Stock"),
@@ -2923,10 +3112,12 @@ unsafe_allow_html=True)
                         "Current Price": st.column_config.NumberColumn("Current (₹)", format="₹%.2f"),
                         "Status": st.column_config.TextColumn("Status"),
                         "Entry Date": st.column_config.TextColumn("Date"),
+                        "P&L (%)": st.column_config.NumberColumn("P&L", format="%+.2f%%"),
                     },
                     hide_index=True,
-                    width='stretch',
                 )
+
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # EMPTY STATE (before first run)
