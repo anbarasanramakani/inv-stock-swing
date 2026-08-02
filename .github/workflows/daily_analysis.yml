@@ -44,14 +44,20 @@ jobs:
 
       - name: Commit updated cache files
         run: |
+          set -e
           git config user.name "NSE Pulse Bot"
           git config user.email "nse-pulse-bot@users.noreply.github.com"
           git config pull.rebase true
-          git add -f analysis_history_cache.json news_cache.json brokers_cache.json nifty1000_cache.csv nifty500_cache.csv all_nse_cache.csv || true
+
+          # Stage every modified file so the working tree is clean before rebasing.
+          git add -A
           if ! git diff --cached --quiet; then
             git commit -m "chore: auto-analysis $(date +'%Y-%m-%d') [skip ci]"
-            git pull --rebase origin "${GITHUB_REF_NAME:-main}"
-            git push origin "HEAD:${GITHUB_REF_NAME:-main}"
           fi
+
+          # Rebase only when the repo is clean; this avoids the "You have unstaged changes" failure.
+          git diff --quiet && git diff --cached --quiet
+          git pull --rebase origin "${GITHUB_REF_NAME:-main}"
+          git push origin "HEAD:${GITHUB_REF_NAME:-main}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
