@@ -289,9 +289,7 @@ def run_full_scheduled_analysis():
         all_picks.append(p_copy)
     for p in damodaran_picks:
         p_copy = dict(p)
-        # Damodaran picks already have Source set by run_damodaran_screener
-        if "Source" not in p_copy:
-            p_copy["Source"] = "swing"
+        p_copy["Source"] = "damodaran"
         all_picks.append(p_copy)
     for p in news_picks:
         p_copy = dict(p)

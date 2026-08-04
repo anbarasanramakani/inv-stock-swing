@@ -646,7 +646,11 @@ if st.session_state.get("initial_news_loaded") is not True:
                     if "Source" not in all_picks_df.columns:
                         all_picks_df["Source"] = "swing"
 
-                    swing = all_picks_df[all_picks_df["Source"] == "swing"]
+                    # Regular swing picks (exclude Damodaran)
+                    swing = all_picks_df[
+                        (all_picks_df["Source"] == "swing") &
+                        (all_picks_df.get("Damodaran", False) != True)
+                    ] if "Damodaran" in all_picks_df.columns else all_picks_df[all_picks_df["Source"] == "swing"]
                     st.session_state.screener_results = swing if not swing.empty else pd.DataFrame()
 
                     med = all_picks_df[all_picks_df["Source"] == "medium"]
@@ -654,6 +658,13 @@ if st.session_state.get("initial_news_loaded") is not True:
 
                     intra_p = all_picks_df[all_picks_df["Source"] == "intraday"]
                     st.session_state.intraday_picks = intra_p if not intra_p.empty else pd.DataFrame()
+
+                    # Damodaran picks — load into separate session state list
+                    dam = all_picks_df[
+                        (all_picks_df["Source"] == "damodaran") |
+                        (all_picks_df.get("Damodaran", False) == True)
+                    ] if "Damodaran" in all_picks_df.columns else all_picks_df[all_picks_df["Source"] == "damodaran"]
+                    st.session_state.accumulated_damodaran = dam.to_dict('records') if not dam.empty else []
 
                     st.session_state.screened_universe = latest_run.get("universe", "Nifty 1000")
                     st.session_state.screened_strategy = latest_run.get("strategy", "All Strategies")
@@ -1147,6 +1158,7 @@ def _sync_worker_state_to_session(worker_state):
     st.session_state.accumulated_medium_term = list(worker_state.get("accumulated_medium_term", []))
     st.session_state.accumulated_intraday_picks = list(worker_state.get("accumulated_intraday_picks", []))
     st.session_state.accumulated_intraday_backtest = list(worker_state.get("accumulated_intraday_backtest", []))
+    st.session_state.accumulated_damodaran = list(worker_state.get("accumulated_damodaran", []))
     st.session_state.accumulated_data_cache = dict(worker_state.get("data_cache", {}))
     st.session_state.accumulated_ltp_cache = dict(worker_state.get("ltp_cache", {}))
     st.session_state.bulk_deals_cached = worker_state.get("bulk_deals_cached")
@@ -1369,6 +1381,10 @@ def _run_background_analysis_worker(raw, strategy, min_price, min_vol_ratio, sta
             for pick in state.get("news_picks", []):
                 p = dict(pick)
                 p["Source"] = "news"
+                all_picks.append(p)
+            for pick in state.get("accumulated_damodaran", []):
+                p = dict(pick)
+                p["Source"] = "damodaran"
                 all_picks.append(p)
             
             # Validate previous picks and add this run to history
