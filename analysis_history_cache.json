@@ -3155,10 +3155,10 @@
           "Type": "BUY",
           "Entry Date": "2026-08-04",
           "Validation Window": 5,
-          "Status": "Active",
-          "Exit Price": null,
-          "P&L (%)": null,
-          "Exit Date": null
+          "Status": "Stop Loss Hit",
+          "Exit Price": 135.7,
+          "P&L (%)": -5.75,
+          "Exit Date": "2026-08-04"
         },
         {
           "Strategy": "EMA Pullback (20)",
