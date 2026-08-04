@@ -20,44 +20,21 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
+          cache: pip
 
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install pandas numpy yfinance requests beautifulsoup4 lxml pytz cachetools tenacity nselib
+          pip install pandas numpy yfinance requests beautifulsoup4 lxml pytz cachetools tenacity nselib httpx aiohttp
 
-      - name: Run Full Analysis (Nifty 1000 -- All Strategies)
+      - name: Run Full Analysis (Nifty 1000)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ github.repository }}
         run: |
           python scheduler.py --mode full --universe "Nifty 1000" --strategy "All Strategies"
-
-      - name: Commit updated cache files
-        run: |
-          set -e
-          git config user.name "NSE Pulse Bot"
-          git config user.email "nse-pulse-bot@users.noreply.github.com"
-          git config pull.rebase true
-
-          # Stage every modified file so the working tree is clean before rebasing.
-          git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: auto-analysis $(date +'%Y-%m-%d') [skip ci]"
-          fi
-
-          # Rebase only when the repo is clean; this avoids the "You have unstaged changes" failure.
-          git diff --quiet && git diff --cached --quiet
-          git pull --rebase origin "${GITHUB_REF_NAME:-main}"
-          git push origin "HEAD:${GITHUB_REF_NAME:-main}"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

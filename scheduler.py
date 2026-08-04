@@ -80,73 +80,200 @@ def _write_last_run_status(status: str, picks_count: int = 0):
 
 
 def run_full_scheduled_analysis():
-    """Run Full Analysis on Nifty 1000 universe at scheduled times."""
+    """Run Full Analysis on Nifty 1000 universe — aligned with app.py worker logic.
+
+    This mirrors _run_background_analysis_worker() in app.py so that scheduled
+    runs produce identical picks, Damodaran signals, broker caches, and
+    backtests compared to an interactive "Run Full Analysis" in the UI.
+    """
     now_ist = _now_ist()
     print(f"[{now_ist.strftime('%Y-%m-%d %H:%M IST')}] Starting scheduled Full Analysis on Nifty 1000...")
-    
+
+    # ── 1. Resolve universe ──────────────────────────────────────────────────
     all_nse_symbols = tick_helper.get_all_nse_tickers()
-    
-    # Load existing news cache
+    universe = tick_helper.get_nifty1000_tickers()
+    print(f"[{_now_ist().strftime('%H:%M IST')}] Universe: {len(universe)} Nifty 1000 stocks")
+
+    # ── 2. Download stock data in batches ────────────────────────────────────
+    data_cache = {}
+    batch_size = 10  # Match app.py worker (was 50 — too aggressive for memory)
+    total_batches = (len(universe) + batch_size - 1) // batch_size
+    for i in range(0, len(universe), batch_size):
+        batch = universe[i:i + batch_size]
+        batch_num = i // batch_size + 1
+        try:
+            batch_data = dp.download_stock_data_batch(batch, period="1y")
+            data_cache.update(batch_data)
+            print(f"  Batch {batch_num}/{total_batches}: downloaded {len(batch_data)} stocks")
+        except Exception as e:
+            print(f"  Batch {batch_num}/{total_batches}: ERROR - {e}")
+        time.sleep(0.3)
+
+    print(f"[{_now_ist().strftime('%H:%M IST')}] Downloaded {len(data_cache)} stocks total")
+
+    # ── 3. Fetch institutional bulk deals ────────────────────────────────────
+    bulk_deals = None
+    try:
+        bulk_deals = inst.get_recent_bulk_deals()
+    except Exception as bd_err:
+        print(f"[Bulk Deals] Fetch failed: {bd_err}")
+
+    # ── 4. Run ALL screeners on every stock ──────────────────────────────────
+    # Matches app.py: run_all_strategies_for_ticker + Damodaran + intraday
+    swing_results = []
+    past_signals = []
+    medium_results = []
+    intraday_picks = []
+    intraday_backtest = []
+    damodaran_picks = []
+    processed = 0
+
+    print(f"[{_now_ist().strftime('%H:%M IST')}] Running screeners on {len(data_cache)} stocks...")
+
+    for ticker, df in data_cache.items():
+        try:
+            # ── Swing: ALL matching strategies (not just the first) ──
+            all_strat_results = scr.run_all_strategies_for_ticker(
+                ticker, df, "All Strategies"
+            )
+            for res in all_strat_results:
+                swing_results.append(res)
+
+            # ── Past signals tracking ──
+            past_sigs = scr.track_past_signals(ticker, df, "All Strategies")
+            if past_sigs:
+                past_signals.extend(past_sigs)
+
+            # ── Medium-term screener ──
+            mt = scr.run_medium_term_screener(ticker, df)
+            if mt:
+                medium_results.append(mt)
+
+            # ── Intraday screener ──
+            intra_res = intra.run_intraday_screener(ticker, df)
+            if intra_res:
+                intraday_picks.extend(intra_res)
+
+            # ── Intraday backtest (10-day) ──
+            intra_bt = intra.backtest_intraday_10days(ticker, df)
+            if intra_bt:
+                intraday_backtest.extend(intra_bt)
+
+            # ── Damodaran G4/G5 techniques ──
+            dam_res = scr.run_damodaran_screener(ticker, df)
+            if dam_res:
+                damodaran_picks.extend(dam_res)
+
+        except Exception:
+            continue
+
+        processed += 1
+        if processed % 100 == 0:
+            print(f"  Screened {processed}/{len(data_cache)} stocks...")
+
+    print(f"[{_now_ist().strftime('%H:%M IST')}] Screening complete: "
+          f"Swing={len(swing_results)} Medium={len(medium_results)} "
+          f"Intraday={len(intraday_picks)} Damodaran={len(damodaran_picks)}")
+
+    # ── 5. Enrich with institutional bulk deals ──────────────────────────────
+    try:
+        swing_results = inst.enrich_picks_with_bulk_deals(swing_results, bulk_deals)
+        medium_results = inst.enrich_picks_with_bulk_deals(medium_results, bulk_deals)
+    except Exception as enrich_err:
+        print(f"[Enrichment] Failed: {enrich_err}")
+
+    # ── 6. News analysis (with real stock data — was passing {} before) ──────
+    # Load existing news from persistent cache first
     existing_news_list = []
-    if _NEWS_CACHE_FILE.exists():
+    if _HAS_PCACHE:
+        try:
+            existing_news_list = pcache.get_news_cache() or []
+        except Exception:
+            pass
+    if not existing_news_list and _NEWS_CACHE_FILE.exists():
         try:
             with open(_NEWS_CACHE_FILE, "r", encoding="utf-8") as f:
                 existing_news_list = json.load(f)
         except Exception:
             pass
-    
-    # Run news analysis
-    news_picks = news_helper.get_today_news_recommendations(
-        stock_data={},
-        all_symbols=all_nse_symbols,
-        existing_picks=existing_news_list,
-    )
-    
-    # Download stock data in batches
-    universe = tick_helper.get_nifty1000_tickers()
-    print(f"[{datetime.datetime.now()}] Downloading data for {len(universe)} Nifty 1000 stocks...")
-    
-    data_cache = {}
-    batch_size = 50
-    for i in range(0, len(universe), batch_size):
-        batch = universe[i:i+batch_size]
+
+    news_picks = []
+    try:
+        news_picks = news_helper.get_today_news_recommendations(
+            stock_data=data_cache,  # FIX: Pass real stock data (was {} before)
+            all_symbols=all_nse_symbols,
+            existing_picks=existing_news_list,
+        ) or []
+        print(f"  News picks: {len(news_picks)}")
+    except Exception as news_err:
+        print(f"[News] Error: {news_err}")
+
+    # ── 7. News backtest ─────────────────────────────────────────────────────
+    news_backtest = []
+    try:
+        cached_computed = [p for p in existing_news_list
+                          if p.get("Price") and p.get("Stop Loss") and p.get("Target")]
+        news_backtest = news_helper.run_news_backtest(
+            data_cache, lookback_days=30, cached_news_items=cached_computed
+        ) or []
+    except Exception as nbt_err:
+        print(f"[News Backtest] Error: {nbt_err}")
+
+    # ── 8. Broker recommendations fetch + persist ────────────────────────────
+    try:
+        broker_calls = news_helper.fetch_broker_calls(
+            all_symbols=all_nse_symbols, max_items=60
+        ) or []
+        print(f"  Broker calls fetched: {len(broker_calls)}")
+
+        # Merge with existing cached broker calls, prune to 30 days
+        existing_brokers = []
+        if _HAS_PCACHE:
+            try:
+                existing_brokers = pcache.get_brokers_cache() or []
+            except Exception:
+                pass
+        existing_map = {item.get("Headline", ""): item for item in existing_brokers}
+        for _p in broker_calls:
+            existing_map[_p.get("Headline", "")] = _p
+        merged_brokers = list(existing_map.values())
         try:
-            batch_data = dp.download_stock_data_batch(batch, period="1y")
-            data_cache.update(batch_data)
-            print(f"[{datetime.datetime.now()}] Downloaded {len(batch_data)} stocks (batch {i//batch_size + 1})")
-        except Exception as e:
-            print(f"Error downloading batch {i//batch_size + 1}: {e}")
-        time.sleep(0.5)
-    
-    # Run screeners
-    swing_results = []
-    past_signals = []
-    medium_results = []
-    intraday_picks = []
-    
-    print(f"[{datetime.datetime.now()}] Running screeners on {len(data_cache)} stocks...")
-    
-    bulk_deals = inst.get_recent_bulk_deals()
-    
-    for ticker, df in data_cache.items():
-        try:
-            res = scr.run_screener_on_data(ticker, df, "All Strategies")
-            if res:
-                swing_results.append(res)
-            past_signals.extend(scr.track_past_signals(ticker, df, "All Strategies"))
-            mt = scr.run_medium_term_screener(ticker, df)
-            if mt:
-                medium_results.append(mt)
-            intra_res = intra.run_intraday_screener(ticker, df)
-            if intra_res:
-                intraday_picks.extend(intra_res)
+            merged_brokers = news_helper.prune_cache_by_days(
+                merged_brokers, days=30, date_key='Date'
+            )
         except Exception:
-            continue
-    
-    swing_results = inst.enrich_picks_with_bulk_deals(swing_results, bulk_deals)
-    medium_results = inst.enrich_picks_with_bulk_deals(medium_results, bulk_deals)
-    
-    # Save to analysis history
+            pass
+        # Persist via all tiers
+        if _HAS_PCACHE:
+            pcache.set_brokers_cache(merged_brokers)
+        # Also save local file
+        try:
+            brokers_file = _PROJECT_DIR / "brokers_cache.json"
+            with open(brokers_file, "w", encoding="utf-8") as f:
+                json.dump(merged_brokers, f, indent=2, ensure_ascii=False, default=str)
+        except Exception:
+            pass
+    except Exception as broker_err:
+        print(f"[Broker Calls] Error: {broker_err}")
+
+    # ── 9. Persist merged news cache ─────────────────────────────────────────
+    try:
+        merged_news_map = {
+            item.get("Headline", item.get("headline", "")): item
+            for item in existing_news_list
+        }
+        for item in news_picks:
+            merged_news_map[item.get("Headline", item.get("headline", ""))] = item
+        merged_news = list(merged_news_map.values())
+
+        with open(_NEWS_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(merged_news, f, indent=2, ensure_ascii=False, default=str)
+        if _HAS_PCACHE:
+            pcache.set_news_cache(merged_news)
+    except Exception as e:
+        print(f"[News Cache] Error saving: {e}")
+
+    # ── 10. Build pick list and save to analysis history ─────────────────────
     all_picks = []
     for p in swing_results:
         p_copy = dict(p)
@@ -160,11 +287,17 @@ def run_full_scheduled_analysis():
         p_copy = dict(p)
         p_copy["Source"] = "intraday"
         all_picks.append(p_copy)
+    for p in damodaran_picks:
+        p_copy = dict(p)
+        # Damodaran picks already have Source set by run_damodaran_screener
+        if "Source" not in p_copy:
+            p_copy["Source"] = "swing"
+        all_picks.append(p_copy)
     for p in news_picks:
         p_copy = dict(p)
         p_copy["Source"] = "news"
         all_picks.append(p_copy)
-    
+
     history_cache = hist.load_history_cache()
     hist.add_run_to_history(
         history_cache,
@@ -174,36 +307,33 @@ def run_full_scheduled_analysis():
         mode="scheduled",
         pick_list=all_picks,
     )
-    # Also push analysis history to GitHub permanent cache so it survives Cloud restarts
-    if _HAS_PCACHE:
-        try:
-            pcache.set_analysis_history(history_cache)
-        except Exception as e:
-            print(f"Error persisting analysis history to GitHub: {e}")
-    
-    # Persist news cache (local disk + GitHub for permanent storage)
-    try:
-        existing_map = {}
-        if _NEWS_CACHE_FILE.exists():
-            with open(_NEWS_CACHE_FILE, "r", encoding="utf-8") as f:
-                for item in json.load(f):
-                    existing_map[item.get("Headline", "")] = item
-        for p in news_picks:
-            existing_map[p.get("Headline", "")] = p
-        merged = list(existing_map.values())
-        with open(_NEWS_CACHE_FILE, "w", encoding="utf-8") as f:
-            json.dump(merged, f, indent=2, ensure_ascii=False)
-        # Also push to GitHub permanent cache so it survives Cloud restarts
-        if _HAS_PCACHE:
-            pcache.set_news_cache(merged)
-    except Exception as e:
-        print(f"Error saving news cache: {e}")
-    
-    total_picks = len(swing_results) + len(medium_results) + len(intraday_picks) + len(news_picks)
-    print(f"[{_now_ist().strftime('%Y-%m-%d %H:%M IST')}] Scheduled Full Analysis complete.")
-    print(f"  Swing: {len(swing_results)} | Medium: {len(medium_results)} | Intraday: {len(intraday_picks)} | News: {len(news_picks)}")
+
+    # Validate broker calls against current prices
+    current_price_map = {}
+    for pick in all_picks:
+        ticker = pick.get("Ticker") or pick.get("Symbol") or ""
+        price = pick.get("Price")
+        if ticker and price:
+            try:
+                current_price_map[ticker] = float(price)
+            except (ValueError, TypeError):
+                pass
+    hist.validate_broker_calls(history_cache, current_price_map)
+
+    # FIX: Use save_history_cache() which writes both local file AND GitHub API
+    hist.save_history_cache(history_cache)
+
+    # ── 11. Summary ──────────────────────────────────────────────────────────
+    total_picks = len(all_picks)
+    print(f"\n[{_now_ist().strftime('%Y-%m-%d %H:%M IST')}] ══ Scheduled Full Analysis COMPLETE ══")
+    print(f"  Swing:     {len(swing_results)}")
+    print(f"  Medium:    {len(medium_results)}")
+    print(f"  Intraday:  {len(intraday_picks)}")
+    print(f"  Damodaran: {len(damodaran_picks)}")
+    print(f"  News:      {len(news_picks)}")
+    print(f"  TOTAL:     {total_picks}")
     _write_last_run_status("success", total_picks)
-    return len(swing_results)
+    return total_picks
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="NSE Pulse Scheduled Analysis")
